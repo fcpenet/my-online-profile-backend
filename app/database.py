@@ -9,8 +9,11 @@ _client = None
 def get_client() -> libsql_client.Client:
     global _client
     if _client is None:
+        url = os.environ["TURSO_DATABASE_URL"]
+        # libsql-client needs https://, not libsql://
+        url = url.replace("libsql://", "https://")
         _client = libsql_client.create_client(
-            url=os.environ["TURSO_DATABASE_URL"],
+            url=url,
             auth_token=os.environ.get("TURSO_AUTH_TOKEN"),
         )
     return _client
