@@ -7,7 +7,7 @@ load_dotenv()
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
-from app.routers import todos, rag
+from app.routers import todos, rag, settings
 
 
 @asynccontextmanager
@@ -28,6 +28,7 @@ app.add_middleware(
 
 app.include_router(todos.router, prefix="/api/todos", tags=["todos"])
 app.include_router(rag.router, prefix="/api/rag", tags=["rag"])
+app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 
 
 @app.get("/api/health")

@@ -71,9 +71,39 @@ class TestInitDb:
             await db.init_db()
         mock_client.batch.assert_called_once()
         statements = mock_client.batch.call_args[0][0]
-        assert len(statements) == 3
-        # Verify all three tables
+        assert len(statements) == 4
+        # Verify all four tables
         all_sql = " ".join(statements)
         assert "todos" in all_sql
         assert "documents" in all_sql
         assert "embeddings" in all_sql
+        assert "settings" in all_sql
+
+    @pytest.mark.asyncio
+    async def test_seeds_api_key_from_env(self):
+        import app.database as db
+        mock_client = AsyncMock()
+        db._client = None
+        os.environ["API_KEY"] = "seed-test-key"
+        with patch("app.database.get_client", return_value=mock_client):
+            await db.init_db()
+        # Should have called execute for the seed INSERT OR IGNORE
+        mock_client.execute.assert_called_once()
+        stmt = mock_client.execute.call_args[0][0]
+        assert "INSERT OR IGNORE" in stmt.sql
+        assert stmt.args == ["seed-test-key"]
+
+    @pytest.mark.asyncio
+    async def test_skips_seed_when_no_env_key(self):
+        import app.database as db
+        mock_client = AsyncMock()
+        db._client = None
+        original = os.environ.pop("API_KEY", None)
+        try:
+            with patch("app.database.get_client", return_value=mock_client):
+                await db.init_db()
+            # Should NOT call execute for seeding
+            mock_client.execute.assert_not_called()
+        finally:
+            if original:
+                os.environ["API_KEY"] = original

@@ -51,5 +51,20 @@ async def init_db():
                 FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """,
         ]
     )
+    # Seed API key from env var if not already in DB
+    api_key = os.environ.get("API_KEY")
+    if api_key:
+        await client.execute(
+            libsql_client.Statement(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES ('api_key', ?)",
+                [api_key],
+            )
+        )
