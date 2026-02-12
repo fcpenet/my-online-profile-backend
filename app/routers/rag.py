@@ -1,8 +1,9 @@
 import json
 
 import libsql_client
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth import require_api_key
 from app.database import get_client
 from app.models import (
     DocumentIngestRequest,
@@ -20,7 +21,7 @@ from app.services.rag_service import (
 router = APIRouter()
 
 
-@router.post("/ingest", status_code=201)
+@router.post("/ingest", status_code=201, dependencies=[Depends(require_api_key)])
 async def ingest_document(body: DocumentIngestRequest) -> DocumentIngestResponse:
     client = get_client()
 
@@ -118,7 +119,7 @@ async def list_documents():
     ]
 
 
-@router.delete("/documents/{document_id}")
+@router.delete("/documents/{document_id}", dependencies=[Depends(require_api_key)])
 async def delete_document(document_id: int):
     client = get_client()
 

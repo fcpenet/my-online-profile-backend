@@ -1,6 +1,7 @@
 import libsql_client
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth import require_api_key
 from app.database import get_client
 from app.models import TodoCreate, TodoUpdate, TodoResponse
 
@@ -18,7 +19,7 @@ def _row_to_todo(row) -> TodoResponse:
     )
 
 
-@router.post("/", status_code=201)
+@router.post("/", status_code=201, dependencies=[Depends(require_api_key)])
 async def create_todo(body: TodoCreate) -> TodoResponse:
     client = get_client()
     rs = await client.execute(
@@ -48,7 +49,7 @@ async def get_todo(todo_id: int) -> TodoResponse:
     return _row_to_todo(rs.rows[0])
 
 
-@router.patch("/{todo_id}")
+@router.patch("/{todo_id}", dependencies=[Depends(require_api_key)])
 async def update_todo(todo_id: int, body: TodoUpdate) -> TodoResponse:
     updates = body.model_dump(exclude_none=True)
     if not updates:
@@ -75,7 +76,7 @@ async def update_todo(todo_id: int, body: TodoUpdate) -> TodoResponse:
     return _row_to_todo(rs.rows[0])
 
 
-@router.delete("/{todo_id}")
+@router.delete("/{todo_id}", dependencies=[Depends(require_api_key)])
 async def delete_todo(todo_id: int):
     client = get_client()
     rs = await client.execute(
