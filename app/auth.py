@@ -14,19 +14,23 @@ _CACHE_TTL = 60  # seconds
 
 
 async def get_api_key() -> str | None:
-    """Fetch the API key from the DB, with a 60-second in-memory cache."""
+    """Fetch the API key from the DB if not expired, with a 60-second in-memory cache."""
     global _cached_key, _cache_time
     if _cached_key and (time.time() - _cache_time) < _CACHE_TTL:
         return _cached_key
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
-            "SELECT value FROM settings WHERE key = ?", ["api_key"]
+            "SELECT value FROM settings WHERE key = ? AND expires_at > datetime('now')",
+            ["api_key"],
         )
     )
     if rs.rows:
         _cached_key = rs.rows[0][0]
         _cache_time = time.time()
+    else:
+        _cached_key = None
+        _cache_time = 0
     return _cached_key
 
 

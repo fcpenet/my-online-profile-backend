@@ -5,12 +5,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 # Set env vars before importing the app
-os.environ.setdefault("API_KEY", "test-secret-key")
 os.environ.setdefault("TURSO_DATABASE_URL", "https://fake-db.turso.io")
 os.environ.setdefault("TURSO_AUTH_TOKEN", "fake-token")
 os.environ.setdefault("OPENAI_API_KEY", "sk-fake-key")
 
-TEST_API_KEY = os.environ["API_KEY"]
+TEST_API_KEY = "test-secret-key"
 AUTH_HEADERS = {"X-API-Key": TEST_API_KEY}
 
 

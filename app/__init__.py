@@ -1,12 +1,16 @@
+import logging
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
 load_dotenv()
+
+# Suppress aiohttp's noisy "Unclosed client session" warnings on shutdown
+logging.getLogger("aiohttp.client").setLevel(logging.CRITICAL)
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import init_db
+from app.database import close_client, init_db
 from app.routers import todos, rag, settings
 
 
@@ -14,6 +18,7 @@ from app.routers import todos, rag, settings
 async def lifespan(app: FastAPI):
     await init_db()
     yield
+    await close_client()
 
 
 app = FastAPI(title="My Profile Backend", lifespan=lifespan)

@@ -19,7 +19,9 @@ async def rotate_key(body: RotateKeyRequest):
     client = get_client()
     await client.execute(
         libsql_client.Statement(
-            "UPDATE settings SET value = ? WHERE key = 'api_key'",
+            """UPDATE settings
+               SET value = ?, created_at = datetime('now'), expires_at = datetime('now', '+24 hours')
+               WHERE key = 'api_key'""",
             [body.new_key],
         )
     )

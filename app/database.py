@@ -1,6 +1,11 @@
+import asyncio
+import logging
 import os
+import secrets
 
 import libsql_client
+
+logger = logging.getLogger(__name__)
 
 
 _client = None
@@ -17,6 +22,15 @@ def get_client() -> libsql_client.Client:
             auth_token=os.environ.get("TURSO_AUTH_TOKEN"),
         )
     return _client
+
+
+async def close_client():
+    global _client
+    if _client is not None:
+        await _client.close()
+        # Allow aiohttp's underlying SSL transport to fully shut down
+        await asyncio.sleep(0.25)
+        _client = None
 
 
 async def init_db():
@@ -54,17 +68,43 @@ async def init_db():
             """
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
+                value TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                expires_at TEXT
             )
             """,
         ]
     )
-    # Seed API key from env var if not already in DB
-    api_key = os.environ.get("API_KEY")
-    if api_key:
+    # Migrate: add columns if the settings table predates the schema change
+    for col, defn in [
+        ("created_at", "TEXT NOT NULL DEFAULT (datetime('now'))"),
+        ("expires_at", "TEXT"),
+    ]:
+        try:
+            await client.execute(f"ALTER TABLE settings ADD COLUMN {col} {defn}")
+        except Exception:
+            pass  # Column already exists
+
+    # Ensure a valid (non-expired) API key exists — generate one if missing or expired
+    rs = await client.execute(
+        libsql_client.Statement(
+            "SELECT value, expires_at FROM settings WHERE key = ?", ["api_key"]
+        )
+    )
+    needs_new_key = True
+    if rs.rows:
+        expires_at = rs.rows[0][1]
+        # Valid if expires_at is in the future (compared as ISO 8601 strings)
+        if expires_at:
+            now = await client.execute("SELECT datetime('now')")
+            needs_new_key = now.rows[0][0] >= expires_at
+    if needs_new_key:
+        new_key = secrets.token_urlsafe(32)
         await client.execute(
             libsql_client.Statement(
-                "INSERT OR IGNORE INTO settings (key, value) VALUES ('api_key', ?)",
-                [api_key],
+                """INSERT OR REPLACE INTO settings (key, value, created_at, expires_at)
+                   VALUES ('api_key', ?, datetime('now'), datetime('now', '+24 hours'))""",
+                [new_key],
             )
         )
+        logger.info("New API key created in the database")
