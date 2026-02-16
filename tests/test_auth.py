@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from tests.conftest import AUTH_HEADERS, mock_result
 
@@ -66,6 +67,57 @@ class TestGetApiKey:
             result = await auth.get_api_key()
         assert result == "fresh-key"
         mock_client.execute.assert_called_once()
+
+
+# --- Unit tests for require_api_key ---
+
+class TestRequireApiKey:
+    @pytest.mark.asyncio
+    async def test_missing_key_raises_401(self):
+        from app.auth import require_api_key
+        with pytest.raises(HTTPException) as exc_info:
+            await require_api_key(api_key=None)
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_empty_key_raises_401(self):
+        from app.auth import require_api_key
+        with pytest.raises(HTTPException) as exc_info:
+            await require_api_key(api_key="")
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_wrong_key_raises_403(self):
+        from app.auth import require_api_key
+        with patch("app.auth.get_api_key", return_value="correct-key"):
+            with pytest.raises(HTTPException) as exc_info:
+                await require_api_key(api_key="wrong-key")
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_no_stored_key_raises_403(self):
+        from app.auth import require_api_key
+        with patch("app.auth.get_api_key", return_value=None):
+            with pytest.raises(HTTPException) as exc_info:
+                await require_api_key(api_key="any-key")
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_non_empty_key_calls_get_api_key(self):
+        from app.auth import require_api_key
+        with patch("app.auth.get_api_key", return_value="stored-key") as mock_get:
+            with pytest.raises(HTTPException) as exc_info:
+                await require_api_key(api_key="some-non-empty-key")
+            mock_get.assert_called_once()
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_matching_key_passes(self):
+        from app.auth import require_api_key
+        with patch("app.auth.get_api_key", return_value="my-secret"):
+            # Should not raise
+            result = await require_api_key(api_key="my-secret")
+        assert result is None
 
 
 # --- Public endpoints: should work without any API key ---
