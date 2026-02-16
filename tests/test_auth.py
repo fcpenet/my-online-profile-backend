@@ -1,6 +1,71 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from tests.conftest import AUTH_HEADERS, mock_result
+
+
+# --- Unit tests for get_api_key (expiry logic) ---
+
+class TestGetApiKey:
+    @pytest.mark.asyncio
+    async def test_returns_key_when_valid(self):
+        import app.auth as auth
+        auth._cached_key = None
+        auth._cache_time = 0
+        mock_client = AsyncMock()
+        mock_client.execute.return_value = mock_result(rows=[("valid-key",)])
+        with patch("app.auth.get_client", return_value=mock_client):
+            result = await auth.get_api_key()
+        assert result == "valid-key"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_expired(self):
+        import app.auth as auth
+        auth._cached_key = None
+        auth._cache_time = 0
+        mock_client = AsyncMock()
+        # expires_at > datetime('now') is false → no rows returned
+        mock_client.execute.return_value = mock_result(rows=[])
+        with patch("app.auth.get_client", return_value=mock_client):
+            result = await auth.get_api_key()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_key_exists(self):
+        import app.auth as auth
+        auth._cached_key = None
+        auth._cache_time = 0
+        mock_client = AsyncMock()
+        mock_client.execute.return_value = mock_result(rows=[])
+        with patch("app.auth.get_client", return_value=mock_client):
+            result = await auth.get_api_key()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_uses_cache_within_ttl(self):
+        import time
+        import app.auth as auth
+        auth._cached_key = "cached-key"
+        auth._cache_time = time.time()  # just now
+        mock_client = AsyncMock()
+        with patch("app.auth.get_client", return_value=mock_client):
+            result = await auth.get_api_key()
+        assert result == "cached-key"
+        # Should NOT have queried the DB
+        mock_client.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_queries_db_when_cache_expired(self):
+        import app.auth as auth
+        auth._cached_key = "stale-key"
+        auth._cache_time = 0  # long ago
+        mock_client = AsyncMock()
+        mock_client.execute.return_value = mock_result(rows=[("fresh-key",)])
+        with patch("app.auth.get_client", return_value=mock_client):
+            result = await auth.get_api_key()
+        assert result == "fresh-key"
+        mock_client.execute.assert_called_once()
 
 
 # --- Public endpoints: should work without any API key ---
