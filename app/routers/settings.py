@@ -5,23 +5,12 @@ from pydantic import BaseModel
 from app.auth import require_api_key, clear_api_key_cache
 from app.database import get_client
 
+
 router = APIRouter()
 
 
 class RotateKeyRequest(BaseModel):
     new_key: str
-
-
-@router.get("/verify-key", dependencies=[Depends(require_api_key)])
-async def verify_key():
-    client = get_client()
-    rs = await client.execute(
-        libsql_client.Statement(
-            "SELECT expires_at FROM settings WHERE key = ?", ["api_key"]
-        )
-    )
-    expires_at = rs.rows[0][0] if rs.rows else None
-    return {"valid": True, "expires_at": expires_at}
 
 
 @router.post("/rotate-key", dependencies=[Depends(require_api_key)])

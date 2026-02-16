@@ -3,32 +3,6 @@
 from tests.conftest import AUTH_HEADERS, mock_result
 
 
-class TestVerifyKey:
-    def test_verify_valid_key(self, client):
-        c, mock_db = client
-        mock_db.execute.return_value = mock_result(
-            rows=[("2099-01-01 00:00:00",)]
-        )
-        resp = c.get("/api/settings/verify-key", headers=AUTH_HEADERS)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["valid"] is True
-        assert data["expires_at"] == "2099-01-01 00:00:00"
-
-    def test_verify_without_key_returns_401(self, client):
-        c, _ = client
-        resp = c.get("/api/settings/verify-key")
-        assert resp.status_code == 401
-
-    def test_verify_wrong_key_returns_403(self, client):
-        c, _ = client
-        resp = c.get(
-            "/api/settings/verify-key",
-            headers={"X-API-Key": "wrong-key"},
-        )
-        assert resp.status_code == 403
-
-
 class TestRotateKey:
     def test_rotate_success(self, client):
         c, mock_db = client
