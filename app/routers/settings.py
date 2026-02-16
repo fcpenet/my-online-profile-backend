@@ -13,6 +13,18 @@ class RotateKeyRequest(BaseModel):
     new_key: str
 
 
+@router.get("/validate-key", dependencies=[Depends(require_api_key)])
+async def validate_key():
+    client = get_client()
+    rs = await client.execute(
+        libsql_client.Statement(
+            "SELECT expires_at FROM settings WHERE key = ?", ["api_key"]
+        )
+    )
+    expires_at = rs.rows[0][0] if rs.rows else None
+    return {"valid": True, "expires_at": expires_at}
+
+
 @router.post("/rotate-key", dependencies=[Depends(require_api_key)])
 async def rotate_key(body: RotateKeyRequest):
     if len(body.new_key) < 8:
