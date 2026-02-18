@@ -66,6 +66,21 @@ async def init_db():
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                amount REAL NOT NULL,
+                tag TEXT,
+                category TEXT,
+                location TEXT,
+                description TEXT,
+                paid_by TEXT NOT NULL,
+                shared_with TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,

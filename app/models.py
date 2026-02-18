@@ -46,3 +46,42 @@ class RAGQueryRequest(BaseModel):
 class RAGQueryResponse(BaseModel):
     answer: str
     sources: list[str]
+
+
+# --- Expenses ---
+
+
+class ExpenseCreate(BaseModel):
+    title: str
+    amount: float
+    tag: str | None = None
+    category: str | None = None
+    location: str | None = None
+    description: str | None = None
+    paid_by: str
+    shared_with: list[str] | None = None
+
+
+class ExpenseUpdate(BaseModel):
+    title: str | None = None
+    amount: float | None = None
+    tag: str | None = None
+    category: str | None = None
+    location: str | None = None
+    description: str | None = None
+    paid_by: str | None = None
+    shared_with: list[str] | None = None
+
+
+class ExpenseResponse(BaseModel):
+    id: int
+    title: str
+    amount: float
+    tag: str | None
+    category: str | None
+    location: str | None
+    description: str | None
+    paid_by: str
+    shared_with: list[str] | None
+    created_at: str
+    updated_at: str

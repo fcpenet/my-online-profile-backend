@@ -34,6 +34,7 @@ def client():
     with patch("app.routers.todos.get_client", return_value=mock_db), \
          patch("app.routers.rag.get_client", return_value=mock_db), \
          patch("app.routers.settings.get_client", return_value=mock_db), \
+         patch("app.routers.expenses.get_client", return_value=mock_db), \
          patch("app.auth.get_api_key", side_effect=_mock_get_api_key), \
          patch("app.init_db", new_callable=AsyncMock):
         from app import app

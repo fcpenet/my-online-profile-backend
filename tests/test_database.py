@@ -75,8 +75,8 @@ class TestInitDb:
             await db.init_db()
         mock_client.batch.assert_called_once()
         statements = mock_client.batch.call_args[0][0]
-        assert len(statements) == 4
-        # Verify all four tables
+        assert len(statements) == 5
+        # Verify all five tables
         all_sql = " ".join(statements)
         assert "todos" in all_sql
         assert "documents" in all_sql
