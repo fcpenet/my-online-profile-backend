@@ -85,3 +85,83 @@ class ExpenseResponse(BaseModel):
     shared_with: list[str] | None
     created_at: str
     updated_at: str
+
+
+# --- Projects ---
+
+
+class ProjectCreate(BaseModel):
+    title: str
+    description: str | None = None
+    status: str | None = "active"
+
+
+class ProjectUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+
+
+class ProjectResponse(BaseModel):
+    id: int
+    title: str
+    description: str | None
+    status: str
+    created_at: str
+    updated_at: str
+
+
+# --- Epics ---
+
+
+class EpicCreate(BaseModel):
+    title: str
+    description: str | None = None
+    status: str | None = "active"
+
+
+class EpicUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+
+
+class EpicResponse(BaseModel):
+    id: int
+    project_id: int
+    title: str
+    description: str | None
+    status: str
+    created_at: str
+    updated_at: str
+
+
+# --- Tasks ---
+
+
+class TaskCreate(BaseModel):
+    title: str
+    description: str | None = None
+    deadline: str | None = None
+    status: str | None = "todo"
+    label: str | None = None
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    deadline: str | None = None
+    status: str | None = None
+    label: str | None = None
+
+
+class TaskResponse(BaseModel):
+    id: int
+    epic_id: int
+    title: str
+    description: str | None
+    deadline: str | None
+    status: str
+    label: str | None
+    created_at: str
+    updated_at: str
