@@ -119,6 +119,7 @@ class ProjectUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     status: str | None = None
+    organization_id: int | None = None
 
 
 class ProjectResponse(BaseModel):
