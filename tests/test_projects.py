@@ -4,9 +4,13 @@ import libsql_client
 
 from tests.conftest import AUTH_HEADERS, mock_result
 
-PROJECT_ROW = (1, "My Project", "A description", "active", "2024-01-01", "2024-01-01")
+# owner_id=10, organization_id=1
+PROJECT_ROW = (1, "My Project", "A description", "active", "2024-01-01", "2024-01-01", 10, 1)
 EPIC_ROW = (1, 1, "Epic One", "Epic desc", "active", "2024-01-01", "2024-01-01")
 TASK_ROW = (1, 1, "Task One", "Task desc", "2024-12-31", "todo", "bug", "2024-01-01", "2024-01-01")
+
+# For require_org_access: returns project's organization_id
+ORG_ACCESS_ROW = mock_result(rows=[(1,)])
 
 
 # ── Projects ─────────────────────────────────────────────────────────────
@@ -18,28 +22,34 @@ class TestCreateProject:
         mock_db.execute.return_value = mock_result(rows=[PROJECT_ROW])
         resp = c.post(
             "/api/projects/",
-            json={"title": "My Project", "description": "A description"},
+            json={"title": "My Project", "description": "A description", "organization_id": 1},
             headers=AUTH_HEADERS,
         )
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "My Project"
         assert data["status"] == "active"
+        assert data["organization_id"] == 1
 
     def test_create_missing_title_returns_422(self, client):
         c, _ = client
-        resp = c.post("/api/projects/", json={}, headers=AUTH_HEADERS)
+        resp = c.post("/api/projects/", json={"organization_id": 1}, headers=AUTH_HEADERS)
+        assert resp.status_code == 422
+
+    def test_create_missing_organization_id_returns_422(self, client):
+        c, _ = client
+        resp = c.post("/api/projects/", json={"title": "Test"}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
 
     def test_create_without_auth_returns_401(self, client):
         c, _ = client
-        resp = c.post("/api/projects/", json={"title": "Test"})
+        resp = c.post("/api/projects/", json={"title": "Test", "organization_id": 1})
         assert resp.status_code == 401
 
     def test_create_calls_db_with_correct_sql(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[PROJECT_ROW])
-        c.post("/api/projects/", json={"title": "Test"}, headers=AUTH_HEADERS)
+        c.post("/api/projects/", json={"title": "Test", "organization_id": 1}, headers=AUTH_HEADERS)
         call_args = mock_db.execute.call_args[0][0]
         assert isinstance(call_args, libsql_client.Statement)
         assert "INSERT INTO projects" in call_args.sql
@@ -48,50 +58,60 @@ class TestCreateProject:
 class TestListProjects:
     def test_list_empty(self, client):
         c, _ = client
-        resp = c.get("/api/projects/")
+        resp = c.get("/api/projects/", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_list_multiple(self, client):
         c, mock_db = client
-        row2 = (2, "Second", None, "archived", "2024-01-02", "2024-01-02")
+        row2 = (2, "Second", None, "archived", "2024-01-02", "2024-01-02", 10, 1)
         mock_db.execute.return_value = mock_result(rows=[row2, PROJECT_ROW])
-        resp = c.get("/api/projects/")
+        resp = c.get("/api/projects/", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert len(resp.json()) == 2
 
-    def test_list_no_auth_required(self, client):
+    def test_list_without_auth_returns_401(self, client):
         c, _ = client
         resp = c.get("/api/projects/")
-        assert resp.status_code == 200
+        assert resp.status_code == 401
 
 
 class TestGetProject:
     def test_get_existing(self, client):
         c, mock_db = client
-        mock_db.execute.return_value = mock_result(rows=[PROJECT_ROW])
-        resp = c.get("/api/projects/1")
+        # First call: SELECT project, second call: require_org_access SELECT org_id
+        mock_db.execute.side_effect = [
+            mock_result(rows=[PROJECT_ROW]),
+            mock_result(rows=[(1,)]),
+        ]
+        resp = c.get("/api/projects/1", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json()["id"] == 1
 
     def test_get_nonexistent_returns_404(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[])
-        resp = c.get("/api/projects/999")
+        resp = c.get("/api/projects/999", headers=AUTH_HEADERS)
         assert resp.status_code == 404
 
 
 class TestUpdateProject:
     def test_update_title(self, client):
         c, mock_db = client
-        updated = (1, "Updated", "A description", "active", "2024-01-01", "2024-01-02")
-        mock_db.execute.return_value = mock_result(rows=[updated])
+        updated = (1, "Updated", "A description", "active", "2024-01-01", "2024-01-02", 10, 1)
+        # First call: require_org_access, second call: UPDATE
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
+            mock_result(rows=[updated]),
+        ]
         resp = c.patch("/api/projects/1", json={"title": "Updated"}, headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json()["title"] == "Updated"
 
     def test_update_empty_body_returns_400(self, client):
-        c, _ = client
+        c, mock_db = client
+        # require_org_access call
+        mock_db.execute.return_value = mock_result(rows=[(1,)])
         resp = c.patch("/api/projects/1", json={}, headers=AUTH_HEADERS)
         assert resp.status_code == 400
 
@@ -105,7 +125,11 @@ class TestUpdateProject:
 class TestDeleteProject:
     def test_delete_existing(self, client):
         c, mock_db = client
-        mock_db.execute.return_value = mock_result(rows=[(1,)])
+        # First: require_org_access, second: DELETE
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
+            mock_result(rows=[(1,)]),
+        ]
         resp = c.delete("/api/projects/1", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json()["message"] == "deleted"
@@ -128,7 +152,7 @@ class TestDeleteProject:
 class TestCreateEpic:
     def test_create_success(self, client):
         c, mock_db = client
-        # First call: _get_project_or_404, second call: INSERT
+        # require_org_access, then INSERT
         mock_db.execute.side_effect = [
             mock_result(rows=[(1,)]),
             mock_result(rows=[EPIC_ROW]),
@@ -162,34 +186,38 @@ class TestCreateEpic:
 class TestListEpics:
     def test_list_empty(self, client):
         c, mock_db = client
-        # First call: _get_project_or_404, second call: SELECT epics
+        # require_org_access, then SELECT epics
         mock_db.execute.side_effect = [
             mock_result(rows=[(1,)]),
             mock_result(rows=[]),
         ]
-        resp = c.get("/api/projects/1/epics")
+        resp = c.get("/api/projects/1/epics", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_list_project_not_found(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[])
-        resp = c.get("/api/projects/999/epics")
+        resp = c.get("/api/projects/999/epics", headers=AUTH_HEADERS)
         assert resp.status_code == 404
 
 
 class TestGetEpic:
     def test_get_existing(self, client):
         c, mock_db = client
-        mock_db.execute.return_value = mock_result(rows=[EPIC_ROW])
-        resp = c.get("/api/projects/1/epics/1")
+        # require_org_access, then SELECT epic
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
+            mock_result(rows=[EPIC_ROW]),
+        ]
+        resp = c.get("/api/projects/1/epics/1", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json()["title"] == "Epic One"
 
     def test_get_nonexistent_returns_404(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[])
-        resp = c.get("/api/projects/1/epics/999")
+        resp = c.get("/api/projects/1/epics/999", headers=AUTH_HEADERS)
         assert resp.status_code == 404
 
 
@@ -197,7 +225,11 @@ class TestUpdateEpic:
     def test_update_status(self, client):
         c, mock_db = client
         updated = (1, 1, "Epic One", "Epic desc", "done", "2024-01-01", "2024-01-02")
-        mock_db.execute.return_value = mock_result(rows=[updated])
+        # require_org_access, then UPDATE
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
+            mock_result(rows=[updated]),
+        ]
         resp = c.patch(
             "/api/projects/1/epics/1", json={"status": "done"}, headers=AUTH_HEADERS
         )
@@ -205,7 +237,8 @@ class TestUpdateEpic:
         assert resp.json()["status"] == "done"
 
     def test_update_empty_body_returns_400(self, client):
-        c, _ = client
+        c, mock_db = client
+        mock_db.execute.return_value = mock_result(rows=[(1,)])
         resp = c.patch("/api/projects/1/epics/1", json={}, headers=AUTH_HEADERS)
         assert resp.status_code == 400
 
@@ -221,7 +254,11 @@ class TestUpdateEpic:
 class TestDeleteEpic:
     def test_delete_existing(self, client):
         c, mock_db = client
-        mock_db.execute.return_value = mock_result(rows=[(1,)])
+        # require_org_access, then DELETE
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
+            mock_result(rows=[(1,)]),
+        ]
         resp = c.delete("/api/projects/1/epics/1", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json()["message"] == "deleted"
@@ -239,8 +276,9 @@ class TestDeleteEpic:
 class TestCreateTask:
     def test_create_success(self, client):
         c, mock_db = client
-        # First call: _get_epic_or_404, second call: INSERT
+        # require_org_access, _get_epic_or_404, INSERT
         mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
             mock_result(rows=[(1,)]),
             mock_result(rows=[TASK_ROW]),
         ]
@@ -275,26 +313,32 @@ class TestCreateTask:
 class TestListTasks:
     def test_list_empty(self, client):
         c, mock_db = client
+        # require_org_access, _get_epic_or_404, SELECT tasks
         mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
             mock_result(rows=[(1,)]),
             mock_result(rows=[]),
         ]
-        resp = c.get("/api/projects/1/epics/1/tasks")
+        resp = c.get("/api/projects/1/epics/1/tasks", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_list_epic_not_found(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[])
-        resp = c.get("/api/projects/1/epics/999/tasks")
+        resp = c.get("/api/projects/1/epics/999/tasks", headers=AUTH_HEADERS)
         assert resp.status_code == 404
 
 
 class TestGetTask:
     def test_get_existing(self, client):
         c, mock_db = client
-        mock_db.execute.return_value = mock_result(rows=[TASK_ROW])
-        resp = c.get("/api/projects/1/epics/1/tasks/1")
+        # require_org_access, then SELECT task
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
+            mock_result(rows=[TASK_ROW]),
+        ]
+        resp = c.get("/api/projects/1/epics/1/tasks/1", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         data = resp.json()
         assert data["title"] == "Task One"
@@ -303,7 +347,7 @@ class TestGetTask:
     def test_get_nonexistent_returns_404(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[])
-        resp = c.get("/api/projects/1/epics/1/tasks/999")
+        resp = c.get("/api/projects/1/epics/1/tasks/999", headers=AUTH_HEADERS)
         assert resp.status_code == 404
 
 
@@ -311,7 +355,11 @@ class TestUpdateTask:
     def test_update_status(self, client):
         c, mock_db = client
         updated = (1, 1, "Task One", "Task desc", "2024-12-31", "in_progress", "bug", "2024-01-01", "2024-01-02")
-        mock_db.execute.return_value = mock_result(rows=[updated])
+        # require_org_access, then UPDATE
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
+            mock_result(rows=[updated]),
+        ]
         resp = c.patch(
             "/api/projects/1/epics/1/tasks/1",
             json={"status": "in_progress"},
@@ -321,7 +369,8 @@ class TestUpdateTask:
         assert resp.json()["status"] == "in_progress"
 
     def test_update_empty_body_returns_400(self, client):
-        c, _ = client
+        c, mock_db = client
+        mock_db.execute.return_value = mock_result(rows=[(1,)])
         resp = c.patch("/api/projects/1/epics/1/tasks/1", json={}, headers=AUTH_HEADERS)
         assert resp.status_code == 400
 
@@ -339,7 +388,11 @@ class TestUpdateTask:
 class TestDeleteTask:
     def test_delete_existing(self, client):
         c, mock_db = client
-        mock_db.execute.return_value = mock_result(rows=[(1,)])
+        # require_org_access, then DELETE
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
+            mock_result(rows=[(1,)]),
+        ]
         resp = c.delete("/api/projects/1/epics/1/tasks/1", headers=AUTH_HEADERS)
         assert resp.status_code == 200
         assert resp.json()["message"] == "deleted"

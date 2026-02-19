@@ -87,6 +87,24 @@ class ExpenseResponse(BaseModel):
     updated_at: str
 
 
+# --- Organizations ---
+
+
+class OrganizationCreate(BaseModel):
+    name: str
+
+
+class OrganizationUpdate(BaseModel):
+    name: str | None = None
+
+
+class OrganizationResponse(BaseModel):
+    id: int
+    name: str
+    created_at: str
+    updated_at: str
+
+
 # --- Projects ---
 
 
@@ -94,6 +112,7 @@ class ProjectCreate(BaseModel):
     title: str
     description: str | None = None
     status: str | None = "active"
+    organization_id: int
 
 
 class ProjectUpdate(BaseModel):
@@ -109,6 +128,8 @@ class ProjectResponse(BaseModel):
     status: str
     created_at: str
     updated_at: str
+    owner_id: int | None
+    organization_id: int | None
 
 
 # --- Epics ---
@@ -173,6 +194,7 @@ class TaskResponse(BaseModel):
 class UserRegister(BaseModel):
     email: str
     password: str
+    organization_id: int | None = None
 
 
 class UserLogin(BaseModel):
@@ -183,6 +205,7 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
+    organization_id: int | None
     created_at: str
 
 

@@ -124,8 +124,8 @@ class TestRequireApiKey:
     async def test_user_api_key_passes(self):
         from app.auth import require_api_key
         mock_client = AsyncMock()
-        # Settings key doesn't match, but user key found
-        mock_client.execute.return_value = mock_result(rows=[(1,)])
+        # Settings key doesn't match, but user key found (id, organization_id)
+        mock_client.execute.return_value = mock_result(rows=[(1, None)])
         with patch("app.auth.get_api_key", return_value="settings-key"), \
              patch("app.auth.get_client", return_value=mock_client):
             result = await require_api_key(api_key="user-key")

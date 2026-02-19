@@ -1,7 +1,7 @@
 import libsql_client
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import require_api_key
+from app.auth import get_current_user, require_org_access
 from app.database import get_client
 from app.models import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
@@ -23,6 +23,8 @@ def _row_to_project(row) -> ProjectResponse:
         status=row[3],
         created_at=row[4],
         updated_at=row[5],
+        owner_id=row[6],
+        organization_id=row[7],
     )
 
 
@@ -55,38 +57,64 @@ def _row_to_task(row) -> TaskResponse:
 # ── Projects ─────────────────────────────────────────────────────────────
 
 
-@router.post("/", status_code=201, dependencies=[Depends(require_api_key)])
-async def create_project(body: ProjectCreate) -> ProjectResponse:
+@router.post("/", status_code=201)
+async def create_project(
+    body: ProjectCreate,
+    user: dict | None = Depends(get_current_user),
+) -> ProjectResponse:
+    owner_id = user["id"] if user else None
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
-            "INSERT INTO projects (title, description, status) VALUES (?, ?, ?) RETURNING *",
-            [body.title, body.description, body.status],
+            "INSERT INTO projects (title, description, status, owner_id, organization_id) "
+            "VALUES (?, ?, ?, ?, ?) RETURNING *",
+            [body.title, body.description, body.status, owner_id, body.organization_id],
         )
     )
     return _row_to_project(rs.rows[0])
 
 
 @router.get("/")
-async def list_projects() -> list[ProjectResponse]:
+async def list_projects(
+    user: dict | None = Depends(get_current_user),
+) -> list[ProjectResponse]:
     client = get_client()
-    rs = await client.execute("SELECT * FROM projects ORDER BY created_at DESC")
+    if user is None:
+        # Settings key: see all projects
+        rs = await client.execute("SELECT * FROM projects ORDER BY created_at DESC")
+    else:
+        # User: see only projects in their org
+        rs = await client.execute(
+            libsql_client.Statement(
+                "SELECT * FROM projects WHERE organization_id = ? ORDER BY created_at DESC",
+                [user["organization_id"]],
+            )
+        )
     return [_row_to_project(row) for row in rs.rows]
 
 
 @router.get("/{project_id}")
-async def get_project(project_id: int) -> ProjectResponse:
+async def get_project(
+    project_id: int,
+    user: dict | None = Depends(get_current_user),
+) -> ProjectResponse:
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement("SELECT * FROM projects WHERE id = ?", [project_id])
     )
     if not rs.rows:
         raise HTTPException(status_code=404, detail="Project not found")
+    await require_org_access(project_id, user)
     return _row_to_project(rs.rows[0])
 
 
-@router.patch("/{project_id}", dependencies=[Depends(require_api_key)])
-async def update_project(project_id: int, body: ProjectUpdate) -> ProjectResponse:
+@router.patch("/{project_id}")
+async def update_project(
+    project_id: int,
+    body: ProjectUpdate,
+    user: dict | None = Depends(get_current_user),
+) -> ProjectResponse:
+    await require_org_access(project_id, user)
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -108,8 +136,12 @@ async def update_project(project_id: int, body: ProjectUpdate) -> ProjectRespons
     return _row_to_project(rs.rows[0])
 
 
-@router.delete("/{project_id}", dependencies=[Depends(require_api_key)])
-async def delete_project(project_id: int):
+@router.delete("/{project_id}")
+async def delete_project(
+    project_id: int,
+    user: dict | None = Depends(get_current_user),
+):
+    await require_org_access(project_id, user)
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
@@ -133,9 +165,13 @@ async def _get_project_or_404(project_id: int):
         raise HTTPException(status_code=404, detail="Project not found")
 
 
-@router.post("/{project_id}/epics", status_code=201, dependencies=[Depends(require_api_key)])
-async def create_epic(project_id: int, body: EpicCreate) -> EpicResponse:
-    await _get_project_or_404(project_id)
+@router.post("/{project_id}/epics", status_code=201)
+async def create_epic(
+    project_id: int,
+    body: EpicCreate,
+    user: dict | None = Depends(get_current_user),
+) -> EpicResponse:
+    await require_org_access(project_id, user)
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
@@ -148,8 +184,11 @@ async def create_epic(project_id: int, body: EpicCreate) -> EpicResponse:
 
 
 @router.get("/{project_id}/epics")
-async def list_epics(project_id: int) -> list[EpicResponse]:
-    await _get_project_or_404(project_id)
+async def list_epics(
+    project_id: int,
+    user: dict | None = Depends(get_current_user),
+) -> list[EpicResponse]:
+    await require_org_access(project_id, user)
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
@@ -161,7 +200,12 @@ async def list_epics(project_id: int) -> list[EpicResponse]:
 
 
 @router.get("/{project_id}/epics/{epic_id}")
-async def get_epic(project_id: int, epic_id: int) -> EpicResponse:
+async def get_epic(
+    project_id: int,
+    epic_id: int,
+    user: dict | None = Depends(get_current_user),
+) -> EpicResponse:
+    await require_org_access(project_id, user)
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
@@ -174,8 +218,14 @@ async def get_epic(project_id: int, epic_id: int) -> EpicResponse:
     return _row_to_epic(rs.rows[0])
 
 
-@router.patch("/{project_id}/epics/{epic_id}", dependencies=[Depends(require_api_key)])
-async def update_epic(project_id: int, epic_id: int, body: EpicUpdate) -> EpicResponse:
+@router.patch("/{project_id}/epics/{epic_id}")
+async def update_epic(
+    project_id: int,
+    epic_id: int,
+    body: EpicUpdate,
+    user: dict | None = Depends(get_current_user),
+) -> EpicResponse:
+    await require_org_access(project_id, user)
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -197,8 +247,13 @@ async def update_epic(project_id: int, epic_id: int, body: EpicUpdate) -> EpicRe
     return _row_to_epic(rs.rows[0])
 
 
-@router.delete("/{project_id}/epics/{epic_id}", dependencies=[Depends(require_api_key)])
-async def delete_epic(project_id: int, epic_id: int):
+@router.delete("/{project_id}/epics/{epic_id}")
+async def delete_epic(
+    project_id: int,
+    epic_id: int,
+    user: dict | None = Depends(get_current_user),
+):
+    await require_org_access(project_id, user)
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
@@ -226,8 +281,14 @@ async def _get_epic_or_404(project_id: int, epic_id: int):
         raise HTTPException(status_code=404, detail="Epic not found")
 
 
-@router.post("/{project_id}/epics/{epic_id}/tasks", status_code=201, dependencies=[Depends(require_api_key)])
-async def create_task(project_id: int, epic_id: int, body: TaskCreate) -> TaskResponse:
+@router.post("/{project_id}/epics/{epic_id}/tasks", status_code=201)
+async def create_task(
+    project_id: int,
+    epic_id: int,
+    body: TaskCreate,
+    user: dict | None = Depends(get_current_user),
+) -> TaskResponse:
+    await require_org_access(project_id, user)
     await _get_epic_or_404(project_id, epic_id)
     client = get_client()
     rs = await client.execute(
@@ -241,7 +302,12 @@ async def create_task(project_id: int, epic_id: int, body: TaskCreate) -> TaskRe
 
 
 @router.get("/{project_id}/epics/{epic_id}/tasks")
-async def list_tasks(project_id: int, epic_id: int) -> list[TaskResponse]:
+async def list_tasks(
+    project_id: int,
+    epic_id: int,
+    user: dict | None = Depends(get_current_user),
+) -> list[TaskResponse]:
+    await require_org_access(project_id, user)
     await _get_epic_or_404(project_id, epic_id)
     client = get_client()
     rs = await client.execute(
@@ -254,7 +320,13 @@ async def list_tasks(project_id: int, epic_id: int) -> list[TaskResponse]:
 
 
 @router.get("/{project_id}/epics/{epic_id}/tasks/{task_id}")
-async def get_task(project_id: int, epic_id: int, task_id: int) -> TaskResponse:
+async def get_task(
+    project_id: int,
+    epic_id: int,
+    task_id: int,
+    user: dict | None = Depends(get_current_user),
+) -> TaskResponse:
+    await require_org_access(project_id, user)
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
@@ -267,8 +339,15 @@ async def get_task(project_id: int, epic_id: int, task_id: int) -> TaskResponse:
     return _row_to_task(rs.rows[0])
 
 
-@router.patch("/{project_id}/epics/{epic_id}/tasks/{task_id}", dependencies=[Depends(require_api_key)])
-async def update_task(project_id: int, epic_id: int, task_id: int, body: TaskUpdate) -> TaskResponse:
+@router.patch("/{project_id}/epics/{epic_id}/tasks/{task_id}")
+async def update_task(
+    project_id: int,
+    epic_id: int,
+    task_id: int,
+    body: TaskUpdate,
+    user: dict | None = Depends(get_current_user),
+) -> TaskResponse:
+    await require_org_access(project_id, user)
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -290,8 +369,14 @@ async def update_task(project_id: int, epic_id: int, task_id: int, body: TaskUpd
     return _row_to_task(rs.rows[0])
 
 
-@router.delete("/{project_id}/epics/{epic_id}/tasks/{task_id}", dependencies=[Depends(require_api_key)])
-async def delete_task(project_id: int, epic_id: int, task_id: int):
+@router.delete("/{project_id}/epics/{epic_id}/tasks/{task_id}")
+async def delete_task(
+    project_id: int,
+    epic_id: int,
+    task_id: int,
+    user: dict | None = Depends(get_current_user),
+):
+    await require_org_access(project_id, user)
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(

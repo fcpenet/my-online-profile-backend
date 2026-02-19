@@ -41,21 +41,50 @@ def clear_api_key_cache():
     _cache_time = 0
 
 
-async def require_api_key(api_key: str = Security(api_key_header)):
+async def get_current_user(api_key: str = Security(api_key_header)) -> dict | None:
+    """Authenticate and return user info, or None for settings key (superuser).
+
+    Returns dict with {"id": int, "organization_id": int | None} for user keys,
+    or None for the settings key (which bypasses org checks).
+    """
     if not api_key:
         raise HTTPException(status_code=401, detail="Missing API key")
-    # Check settings key (existing system)
+    # Check settings key (superuser — bypasses org checks)
     stored_key = await get_api_key()
     if stored_key and api_key == stored_key:
-        return
+        return None
     # Check user API keys
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
-            "SELECT id FROM users WHERE api_key = ? AND api_key_expires_at > datetime('now')",
+            "SELECT id, organization_id FROM users WHERE api_key = ? AND api_key_expires_at > datetime('now')",
             [api_key],
         )
     )
     if rs.rows:
-        return
+        return {"id": rs.rows[0][0], "organization_id": rs.rows[0][1]}
     raise HTTPException(status_code=403, detail="Invalid API key")
+
+
+async def require_api_key(api_key: str = Security(api_key_header)):
+    """Backwards-compatible auth dependency. Validates key but discards user info."""
+    await get_current_user(api_key)
+
+
+async def require_org_access(project_id: int, user: dict | None):
+    """Raises 404 if project doesn't exist.
+    Raises 403 if user's org doesn't match the project's org.
+    Settings key (user=None) bypasses org checks but still verifies existence."""
+    client = get_client()
+    rs = await client.execute(
+        libsql_client.Statement(
+            "SELECT organization_id FROM projects WHERE id = ?", [project_id]
+        )
+    )
+    if not rs.rows:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if user is None:
+        return  # Settings key = full access
+    project_org_id = rs.rows[0][0]
+    if project_org_id is not None and project_org_id != user.get("organization_id"):
+        raise HTTPException(status_code=403, detail="Access denied")

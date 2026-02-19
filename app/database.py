@@ -81,13 +81,23 @@ async def init_db():
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS organizations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 description TEXT,
                 status TEXT NOT NULL DEFAULT 'active',
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                owner_id INTEGER REFERENCES users(id),
+                organization_id INTEGER REFERENCES organizations(id)
             )
             """,
             """
@@ -124,7 +134,8 @@ async def init_db():
                 api_key TEXT,
                 api_key_expires_at TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                organization_id INTEGER REFERENCES organizations(id)
             )
             """,
             """
@@ -146,6 +157,25 @@ async def init_db():
             await client.execute(f"ALTER TABLE settings ADD COLUMN {col} {defn}")
         except Exception:
             pass  # Column already exists
+
+    # Migrate: add organization_id to users
+    for col, defn in [
+        ("organization_id", "INTEGER REFERENCES organizations(id)"),
+    ]:
+        try:
+            await client.execute(f"ALTER TABLE users ADD COLUMN {col} {defn}")
+        except Exception:
+            pass
+
+    # Migrate: add owner_id and organization_id to projects
+    for col, defn in [
+        ("owner_id", "INTEGER REFERENCES users(id)"),
+        ("organization_id", "INTEGER REFERENCES organizations(id)"),
+    ]:
+        try:
+            await client.execute(f"ALTER TABLE projects ADD COLUMN {col} {defn}")
+        except Exception:
+            pass
 
     # Ensure a valid (non-expired) API key exists — generate one if missing or expired
     rs = await client.execute(
