@@ -165,3 +165,27 @@ class TaskResponse(BaseModel):
     label: str | None
     created_at: str
     updated_at: str
+
+
+# --- Users ---
+
+
+class UserRegister(BaseModel):
+    email: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    created_at: str
+
+
+class LoginResponse(BaseModel):
+    api_key: str
+    expires_at: str

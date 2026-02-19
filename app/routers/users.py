@@ -1,0 +1,80 @@
+import secrets
+
+import bcrypt
+import libsql_client
+from fastapi import APIRouter, HTTPException
+
+from app.database import get_client
+from app.models import UserRegister, UserLogin, UserResponse, LoginResponse
+
+router = APIRouter()
+
+
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(password.encode(), password_hash.encode())
+
+
+@router.post("/register", status_code=201)
+async def register(body: UserRegister) -> UserResponse:
+    client = get_client()
+
+    # Check if email already exists
+    rs = await client.execute(
+        libsql_client.Statement(
+            "SELECT id FROM users WHERE email = ?", [body.email]
+        )
+    )
+    if rs.rows:
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    password_hash = _hash_password(body.password)
+    rs = await client.execute(
+        libsql_client.Statement(
+            "INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING id, email, created_at",
+            [body.email, password_hash],
+        )
+    )
+    row = rs.rows[0]
+    return UserResponse(id=row[0], email=row[1], created_at=row[2])
+
+
+@router.post("/login")
+async def login(body: UserLogin) -> LoginResponse:
+    client = get_client()
+
+    # Look up user by email
+    rs = await client.execute(
+        libsql_client.Statement(
+            "SELECT id, password_hash, api_key, api_key_expires_at FROM users WHERE email = ?",
+            [body.email],
+        )
+    )
+    if not rs.rows:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    user_id, password_hash, api_key, expires_at = rs.rows[0]
+
+    if not _verify_password(body.password, password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # Check if existing key is still valid
+    if api_key and expires_at:
+        now_rs = await client.execute("SELECT datetime('now')")
+        now = now_rs.rows[0][0]
+        if now < expires_at:
+            return LoginResponse(api_key=api_key, expires_at=expires_at)
+
+    # Generate new key
+    new_key = secrets.token_urlsafe(32)
+    rs = await client.execute(
+        libsql_client.Statement(
+            "UPDATE users SET api_key = ?, api_key_expires_at = datetime('now', '+24 hours'), "
+            "updated_at = datetime('now') WHERE id = ? RETURNING api_key_expires_at",
+            [new_key, user_id],
+        )
+    )
+    return LoginResponse(api_key=new_key, expires_at=rs.rows[0][0])

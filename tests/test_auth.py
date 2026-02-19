@@ -89,7 +89,10 @@ class TestRequireApiKey:
     @pytest.mark.asyncio
     async def test_wrong_key_raises_403(self):
         from app.auth import require_api_key
-        with patch("app.auth.get_api_key", return_value="correct-key"):
+        mock_client = AsyncMock()
+        mock_client.execute.return_value = mock_result(rows=[])
+        with patch("app.auth.get_api_key", return_value="correct-key"), \
+             patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_api_key(api_key="wrong-key")
         assert exc_info.value.status_code == 403
@@ -97,7 +100,10 @@ class TestRequireApiKey:
     @pytest.mark.asyncio
     async def test_no_stored_key_raises_403(self):
         from app.auth import require_api_key
-        with patch("app.auth.get_api_key", return_value=None):
+        mock_client = AsyncMock()
+        mock_client.execute.return_value = mock_result(rows=[])
+        with patch("app.auth.get_api_key", return_value=None), \
+             patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_api_key(api_key="any-key")
         assert exc_info.value.status_code == 403
@@ -105,11 +111,25 @@ class TestRequireApiKey:
     @pytest.mark.asyncio
     async def test_non_empty_key_calls_get_api_key(self):
         from app.auth import require_api_key
-        with patch("app.auth.get_api_key", return_value="stored-key") as mock_get:
+        mock_client = AsyncMock()
+        mock_client.execute.return_value = mock_result(rows=[])
+        with patch("app.auth.get_api_key", return_value="stored-key") as mock_get, \
+             patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_api_key(api_key="some-non-empty-key")
             mock_get.assert_called_once()
         assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_user_api_key_passes(self):
+        from app.auth import require_api_key
+        mock_client = AsyncMock()
+        # Settings key doesn't match, but user key found
+        mock_client.execute.return_value = mock_result(rows=[(1,)])
+        with patch("app.auth.get_api_key", return_value="settings-key"), \
+             patch("app.auth.get_client", return_value=mock_client):
+            result = await require_api_key(api_key="user-key")
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_matching_key_passes(self):

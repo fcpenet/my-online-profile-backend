@@ -44,6 +44,18 @@ def clear_api_key_cache():
 async def require_api_key(api_key: str = Security(api_key_header)):
     if not api_key:
         raise HTTPException(status_code=401, detail="Missing API key")
+    # Check settings key (existing system)
     stored_key = await get_api_key()
-    if not stored_key or api_key != stored_key:
-        raise HTTPException(status_code=403, detail="Invalid API key")
+    if stored_key and api_key == stored_key:
+        return
+    # Check user API keys
+    client = get_client()
+    rs = await client.execute(
+        libsql_client.Statement(
+            "SELECT id FROM users WHERE api_key = ? AND api_key_expires_at > datetime('now')",
+            [api_key],
+        )
+    )
+    if rs.rows:
+        return
+    raise HTTPException(status_code=403, detail="Invalid API key")
