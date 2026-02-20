@@ -46,6 +46,17 @@ class TestCreateProject:
         resp = c.post("/api/projects/", json={"title": "Test", "organization_id": 1})
         assert resp.status_code == 401
 
+    def test_create_invalid_org_returns_404(self, client):
+        c, mock_db = client
+        mock_db.execute.return_value = mock_result(rows=[])
+        resp = c.post(
+            "/api/projects/",
+            json={"title": "Test", "organization_id": 999},
+            headers=AUTH_HEADERS,
+        )
+        assert resp.status_code == 404
+        assert "Organization not found" in resp.json()["detail"]
+
     def test_create_calls_db_with_correct_sql(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[PROJECT_ROW])
@@ -120,6 +131,19 @@ class TestUpdateProject:
         mock_db.execute.return_value = mock_result(rows=[])
         resp = c.patch("/api/projects/999", json={"title": "x"}, headers=AUTH_HEADERS)
         assert resp.status_code == 404
+
+    def test_update_invalid_org_returns_404(self, client):
+        c, mock_db = client
+        # First call: require_org_access (project exists), second: org check (not found)
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),
+            mock_result(rows=[]),
+        ]
+        resp = c.patch(
+            "/api/projects/1", json={"organization_id": 999}, headers=AUTH_HEADERS
+        )
+        assert resp.status_code == 404
+        assert "Organization not found" in resp.json()["detail"]
 
 
 class TestDeleteProject:

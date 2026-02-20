@@ -18,8 +18,20 @@ def _verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode(), password_hash.encode())
 
 
+async def _get_org_or_404(org_id: int):
+    client = get_client()
+    rs = await client.execute(
+        libsql_client.Statement("SELECT id FROM organizations WHERE id = ?", [org_id])
+    )
+    if not rs.rows:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+
 @router.post("/register", status_code=201)
 async def register(body: UserRegister) -> UserResponse:
+    if body.organization_id is not None:
+        await _get_org_or_404(body.organization_id)
+
     client = get_client()
 
     # Check if email already exists

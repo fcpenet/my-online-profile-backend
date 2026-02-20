@@ -15,6 +15,15 @@ router = APIRouter()
 # ── helpers ──────────────────────────────────────────────────────────────
 
 
+async def _get_org_or_404(org_id: int):
+    client = get_client()
+    rs = await client.execute(
+        libsql_client.Statement("SELECT id FROM organizations WHERE id = ?", [org_id])
+    )
+    if not rs.rows:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+
 def _row_to_project(row) -> ProjectResponse:
     return ProjectResponse(
         id=row[0],
@@ -62,6 +71,7 @@ async def create_project(
     body: ProjectCreate,
     user: dict | None = Depends(get_current_user),
 ) -> ProjectResponse:
+    await _get_org_or_404(body.organization_id)
     owner_id = user["id"] if user else None
     client = get_client()
     rs = await client.execute(
@@ -118,6 +128,9 @@ async def update_project(
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    if "organization_id" in updates:
+        await _get_org_or_404(updates["organization_id"])
 
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values())

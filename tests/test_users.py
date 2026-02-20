@@ -47,6 +47,16 @@ class TestRegister:
         resp = c.post("/api/users/register", json={"email": "test@example.com"})
         assert resp.status_code == 422
 
+    def test_register_invalid_org_returns_404(self, client):
+        c, mock_db = client
+        mock_db.execute.return_value = mock_result(rows=[])
+        resp = c.post(
+            "/api/users/register",
+            json={"email": "test@example.com", "password": "mypassword", "organization_id": 999},
+        )
+        assert resp.status_code == 404
+        assert "Organization not found" in resp.json()["detail"]
+
     def test_register_calls_db_with_correct_sql(self, client):
         c, mock_db = client
         mock_db.execute.side_effect = [
