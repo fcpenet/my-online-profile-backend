@@ -66,6 +66,18 @@ async def init_db():
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS trips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                participants TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
@@ -74,8 +86,9 @@ async def init_db():
                 category TEXT,
                 location TEXT,
                 description TEXT,
-                paid_by TEXT NOT NULL,
-                shared_with TEXT,
+                payor_id INTEGER REFERENCES users(id),
+                participants TEXT,
+                trip_id INTEGER REFERENCES trips(id),
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             )
@@ -176,6 +189,28 @@ async def init_db():
             await client.execute(f"ALTER TABLE projects ADD COLUMN {col} {defn}")
         except Exception:
             pass
+
+    # Migrate: update expenses to use payor_id + trip_id
+    for col, defn in [
+        ("payor_id", "INTEGER REFERENCES users(id)"),
+        ("trip_id", "INTEGER REFERENCES trips(id)"),
+    ]:
+        try:
+            await client.execute(f"ALTER TABLE expenses ADD COLUMN {col} {defn}")
+        except Exception:
+            pass
+
+    # Migrate: add participants to trips
+    try:
+        await client.execute("ALTER TABLE trips ADD COLUMN participants TEXT")
+    except Exception:
+        pass
+
+    # Migrate: rename shared_with to participants in expenses
+    try:
+        await client.execute("ALTER TABLE expenses RENAME COLUMN shared_with TO participants")
+    except Exception:
+        pass
 
     # Ensure a valid (non-expired) API key exists — generate one if missing or expired
     rs = await client.execute(

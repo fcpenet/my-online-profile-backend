@@ -35,6 +35,7 @@ def client():
          patch("app.routers.rag.get_client", return_value=mock_db), \
          patch("app.routers.settings.get_client", return_value=mock_db), \
          patch("app.routers.expenses.get_client", return_value=mock_db), \
+         patch("app.routers.trips.get_client", return_value=mock_db), \
          patch("app.routers.projects.get_client", return_value=mock_db), \
          patch("app.routers.users.get_client", return_value=mock_db), \
          patch("app.routers.organizations.get_client", return_value=mock_db), \

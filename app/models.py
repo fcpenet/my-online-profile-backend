@@ -48,6 +48,36 @@ class RAGQueryResponse(BaseModel):
     sources: list[str]
 
 
+# --- Trips ---
+
+
+class TripCreate(BaseModel):
+    title: str
+    description: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    participants: list[int] | None = None
+
+
+class TripUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    participants: list[int] | None = None
+
+
+class TripResponse(BaseModel):
+    id: int
+    title: str
+    description: str | None
+    start_date: str | None
+    end_date: str | None
+    participants: list[int] | None
+    created_at: str
+    updated_at: str
+
+
 # --- Expenses ---
 
 
@@ -58,8 +88,9 @@ class ExpenseCreate(BaseModel):
     category: str | None = None
     location: str | None = None
     description: str | None = None
-    paid_by: str
-    shared_with: list[str] | None = None
+    payor_id: int | None = None
+    participants: list[int] | None = None
+    trip_id: int | None = None
 
 
 class ExpenseUpdate(BaseModel):
@@ -69,8 +100,9 @@ class ExpenseUpdate(BaseModel):
     category: str | None = None
     location: str | None = None
     description: str | None = None
-    paid_by: str | None = None
-    shared_with: list[str] | None = None
+    payor_id: int | None = None
+    participants: list[int] | None = None
+    trip_id: int | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -81,8 +113,9 @@ class ExpenseResponse(BaseModel):
     category: str | None
     location: str | None
     description: str | None
-    paid_by: str
-    shared_with: list[str] | None
+    payor_id: int | None
+    participants: list[int] | None
+    trip_id: int | None
     created_at: str
     updated_at: str
 
