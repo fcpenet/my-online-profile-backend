@@ -1,8 +1,19 @@
 """Tests for Expense CRUD endpoints (app/routers/expenses.py)."""
 
+from unittest.mock import patch
+
 import libsql_client
 
 from tests.conftest import AUTH_HEADERS, mock_result
+
+USER_API_KEY_HEADERS = {"X-API-Key": "user-api-key"}
+
+
+def _mock_user_key_auth():
+    """Patches auth so USER_API_KEY_HEADERS triggers user DB lookup."""
+    async def _different_key():
+        return "settings-key-value"
+    return patch("app.auth.get_api_key", side_effect=_different_key)
 
 # columns: id, title, amount, tag, category, location, description,
 #          payor_id, participants, trip_id, created_at, updated_at
@@ -121,6 +132,41 @@ class TestCreateExpense:
         )
         assert resp.status_code == 400
         assert "trip_id required" in resp.json()["detail"]
+
+    def test_create_user_not_in_trip_returns_403(self, client):
+        c, mock_db = client
+        # user_id=3, trip participants=[1, 2] — user not a member
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(3, None)]),           # auth: user lookup
+            mock_result(rows=[('[1, 2]',)]),         # _get_trip_participants
+        ]
+        with _mock_user_key_auth():
+            resp = c.post(
+                "/api/expenses/",
+                json={"title": "Dinner", "amount": 10.0, "trip_id": 2},
+                headers=USER_API_KEY_HEADERS,
+            )
+        assert resp.status_code == 403
+        assert "Not a participant" in resp.json()["detail"]
+
+    def test_create_user_in_trip_succeeds(self, client):
+        c, mock_db = client
+        row = (2, "Coffee", 5.0, None, None, None, None, None, None, 2,
+               "2024-01-01", "2024-01-01")
+        # user_id=1, trip participants=[1, 2] — user is a member
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1, None)]),           # auth: user lookup
+            mock_result(rows=[('[1, 2]',)]),         # _get_trip_participants
+            mock_result(rows=[row]),                 # INSERT result
+        ]
+        with _mock_user_key_auth():
+            resp = c.post(
+                "/api/expenses/",
+                json={"title": "Coffee", "amount": 5.0, "trip_id": 2},
+                headers=USER_API_KEY_HEADERS,
+            )
+        assert resp.status_code == 201
+        assert resp.json()["trip_id"] == 2
 
     def test_create_calls_db_with_correct_sql(self, client):
         c, mock_db = client

@@ -3,7 +3,7 @@ import json
 import libsql_client
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import require_api_key
+from app.auth import get_current_user, require_api_key
 from app.database import get_client
 from app.models import ExpenseCreate, ExpenseUpdate, ExpenseResponse
 
@@ -69,14 +69,42 @@ async def _validate_participants_in_trip(participants: list[int], trip_id: int |
         )
 
 
-@router.post("/", status_code=201, dependencies=[Depends(require_api_key)])
-async def create_expense(body: ExpenseCreate) -> ExpenseResponse:
+async def _get_trip_participants(trip_id: int) -> list[int]:
+    """Fetches the trip's participants list. Raises 404 if trip not found."""
+    client = get_client()
+    rs = await client.execute(
+        libsql_client.Statement("SELECT participants FROM trips WHERE id = ?", [trip_id])
+    )
+    if not rs.rows:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    return json.loads(rs.rows[0][0]) if rs.rows[0][0] else []
+
+
+@router.post("/", status_code=201)
+async def create_expense(
+    body: ExpenseCreate,
+    user: dict | None = Depends(get_current_user),
+) -> ExpenseResponse:
     if body.payor_id is not None:
         await _validate_payor(body.payor_id)
+
+    trip_participants: list[int] | None = None
+    if body.trip_id is not None:
+        trip_participants = await _get_trip_participants(body.trip_id)
+        if user is not None and user["id"] not in trip_participants:
+            raise HTTPException(status_code=403, detail="Not a participant of this trip")
+
     if body.participants:
-        await _validate_participants_in_trip(body.participants, body.trip_id)
-    elif body.trip_id is not None:
-        await _validate_trip(body.trip_id)
+        if body.trip_id is None:
+            raise HTTPException(
+                status_code=400, detail="trip_id required when participants are specified"
+            )
+        invalid = [p for p in body.participants if p not in trip_participants]
+        if invalid:
+            raise HTTPException(
+                status_code=404, detail=f"Participants not in trip: {invalid}"
+            )
+
     participants_json = json.dumps(body.participants) if body.participants else None
     client = get_client()
     rs = await client.execute(

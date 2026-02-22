@@ -57,6 +57,7 @@ class TripCreate(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     participants: list[int] | None = None
+    invite_code: str | None = None
 
 
 class TripUpdate(BaseModel):
@@ -76,6 +77,11 @@ class TripResponse(BaseModel):
     participants: list[int] | None
     created_at: str
     updated_at: str
+    invite_code: str | None
+
+
+class JoinTripRequest(BaseModel):
+    invite_code: str
 
 
 # --- Expenses ---

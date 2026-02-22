@@ -1,18 +1,19 @@
 import json
+import secrets
 
 import libsql_client
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import require_api_key
+from app.auth import get_current_user, require_api_key
 from app.database import get_client
-from app.models import TripCreate, TripUpdate, TripResponse
+from app.models import TripCreate, TripUpdate, TripResponse, JoinTripRequest
 
 router = APIRouter()
 
 
 def _row_to_trip(row) -> TripResponse:
     # columns: id, title, description, start_date, end_date,
-    #          participants, created_at, updated_at
+    #          participants, created_at, updated_at, invite_code
     participants = json.loads(row[5]) if row[5] else None
     return TripResponse(
         id=row[0],
@@ -23,6 +24,7 @@ def _row_to_trip(row) -> TripResponse:
         participants=participants,
         created_at=row[6],
         updated_at=row[7],
+        invite_code=row[8],
     )
 
 
@@ -48,13 +50,14 @@ async def _validate_participants(user_ids: list[int]):
 async def create_trip(body: TripCreate) -> TripResponse:
     if body.participants:
         await _validate_participants(body.participants)
+    invite_code = body.invite_code or secrets.token_urlsafe(8)
     participants_json = json.dumps(body.participants) if body.participants else None
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
-            "INSERT INTO trips (title, description, start_date, end_date, participants) "
-            "VALUES (?, ?, ?, ?, ?) RETURNING *",
-            [body.title, body.description, body.start_date, body.end_date, participants_json],
+            "INSERT INTO trips (title, description, start_date, end_date, participants, invite_code) "
+            "VALUES (?, ?, ?, ?, ?, ?) RETURNING *",
+            [body.title, body.description, body.start_date, body.end_date, participants_json, invite_code],
         )
     )
     return _row_to_trip(rs.rows[0])
@@ -114,3 +117,43 @@ async def delete_trip(trip_id: int):
     if not rs.rows:
         raise HTTPException(status_code=404, detail="Trip not found")
     return {"message": "deleted"}
+
+
+@router.post("/{trip_id}/join")
+async def join_trip(
+    trip_id: int,
+    body: JoinTripRequest,
+    user: dict | None = Depends(get_current_user),
+) -> TripResponse:
+    if user is None:
+        raise HTTPException(status_code=403, detail="Settings key cannot join trips")
+
+    client = get_client()
+    rs = await client.execute(
+        libsql_client.Statement(
+            "SELECT participants, invite_code FROM trips WHERE id = ?", [trip_id]
+        )
+    )
+    if not rs.rows:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    participants_raw, trip_invite_code = rs.rows[0]
+    if body.invite_code != trip_invite_code:
+        raise HTTPException(status_code=403, detail="Invalid invite code")
+
+    participants = json.loads(participants_raw) if participants_raw else []
+    if user["id"] in participants:
+        # Already a member — fetch full trip and return (idempotent)
+        rs = await client.execute(
+            libsql_client.Statement("SELECT * FROM trips WHERE id = ?", [trip_id])
+        )
+        return _row_to_trip(rs.rows[0])
+
+    participants.append(user["id"])
+    rs = await client.execute(
+        libsql_client.Statement(
+            "UPDATE trips SET participants = ?, updated_at = datetime('now') WHERE id = ? RETURNING *",
+            [json.dumps(participants), trip_id],
+        )
+    )
+    return _row_to_trip(rs.rows[0])

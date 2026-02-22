@@ -1,13 +1,24 @@
 """Tests for Trip CRUD endpoints (app/routers/trips.py)."""
 
+from unittest.mock import patch
+
 import libsql_client
 
 from tests.conftest import AUTH_HEADERS, mock_result
 
 # columns: id, title, description, start_date, end_date,
-#          participants, created_at, updated_at
+#          participants, created_at, updated_at, invite_code
 TRIP_ROW = (1, "Europe 2024", "Summer trip", "2024-06-01", "2024-06-15",
-            '[1, 2]', "2024-01-01", "2024-01-01")
+            '[1, 2]', "2024-01-01", "2024-01-01", "abc123")
+
+USER_API_KEY_HEADERS = {"X-API-Key": "user-api-key"}
+
+
+def _mock_user_key_auth():
+    """Patches auth so USER_API_KEY_HEADERS triggers user DB lookup."""
+    async def _different_key():
+        return "settings-key-value"
+    return patch("app.auth.get_api_key", side_effect=_different_key)
 
 
 class TestCreateTrip:
@@ -34,6 +45,7 @@ class TestCreateTrip:
         assert data["title"] == "Europe 2024"
         assert data["start_date"] == "2024-06-01"
         assert data["participants"] == [1, 2]
+        assert data["invite_code"] == "abc123"
 
     def test_create_with_participants_validates_users(self, client):
         c, mock_db = client
@@ -64,7 +76,7 @@ class TestCreateTrip:
 
     def test_create_minimal_no_participants(self, client):
         c, mock_db = client
-        row = (2, "Weekend Trip", None, None, None, None, "2024-01-01", "2024-01-01")
+        row = (2, "Weekend Trip", None, None, None, None, "2024-01-01", "2024-01-01", None)
         mock_db.execute.return_value = mock_result(rows=[row])
         resp = c.post("/api/trips/", json={"title": "Weekend Trip"}, headers=AUTH_HEADERS)
         assert resp.status_code == 201
@@ -101,7 +113,7 @@ class TestListTrips:
     def test_list_multiple(self, client):
         c, mock_db = client
         row2 = (2, "Asia Trip", None, "2024-09-01", "2024-09-14",
-                None, "2024-02-01", "2024-02-01")
+                None, "2024-02-01", "2024-02-01", None)
         mock_db.execute.return_value = mock_result(rows=[row2, TRIP_ROW])
         resp = c.get("/api/trips/", headers=AUTH_HEADERS)
         assert resp.status_code == 200
@@ -143,7 +155,7 @@ class TestUpdateTrip:
     def test_update_title(self, client):
         c, mock_db = client
         updated = (1, "Europe 2025", "Summer trip", "2024-06-01", "2024-06-15",
-                   '[1, 2]', "2024-01-01", "2024-01-02")
+                   '[1, 2]', "2024-01-01", "2024-01-02", "abc123")
         mock_db.execute.return_value = mock_result(rows=[updated])
         resp = c.patch("/api/trips/1", json={"title": "Europe 2025"}, headers=AUTH_HEADERS)
         assert resp.status_code == 200
@@ -152,7 +164,7 @@ class TestUpdateTrip:
     def test_update_participants_validates_users(self, client):
         c, mock_db = client
         updated = (1, "Europe 2024", "Summer trip", "2024-06-01", "2024-06-15",
-                   '[1, 3]', "2024-01-01", "2024-01-02")
+                   '[1, 3]', "2024-01-01", "2024-01-02", "abc123")
         mock_db.execute.side_effect = [
             mock_result(rows=[(1,), (3,)]),  # both users exist
             mock_result(rows=[updated]),
@@ -175,7 +187,7 @@ class TestUpdateTrip:
     def test_update_dates(self, client):
         c, mock_db = client
         updated = (1, "Europe 2024", "Summer trip", "2024-07-01", "2024-07-15",
-                   '[1, 2]', "2024-01-01", "2024-01-02")
+                   '[1, 2]', "2024-01-01", "2024-01-02", "abc123")
         mock_db.execute.return_value = mock_result(rows=[updated])
         resp = c.patch(
             "/api/trips/1",
@@ -215,3 +227,76 @@ class TestDeleteTrip:
         c, _ = client
         resp = c.delete("/api/trips/1")
         assert resp.status_code == 401
+
+
+class TestJoinTrip:
+    def test_join_success(self, client):
+        c, mock_db = client
+        updated = (1, "Europe 2024", "Summer trip", "2024-06-01", "2024-06-15",
+                   '[1, 2, 3]', "2024-01-01", "2024-01-02", "abc123")
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(3, None)]),             # auth: user lookup (id=3)
+            mock_result(rows=[('[1, 2]', 'abc123')]),  # SELECT participants, invite_code
+            mock_result(rows=[updated]),               # UPDATE RETURNING *
+        ]
+        with _mock_user_key_auth():
+            resp = c.post(
+                "/api/trips/1/join",
+                json={"invite_code": "abc123"},
+                headers=USER_API_KEY_HEADERS,
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["participants"] == [1, 2, 3]
+
+    def test_join_already_member_is_idempotent(self, client):
+        c, mock_db = client
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1, None)]),             # auth: user lookup (id=1)
+            mock_result(rows=[('[1, 2]', 'abc123')]),  # SELECT participants, invite_code
+            mock_result(rows=[TRIP_ROW]),              # SELECT * (already member)
+        ]
+        with _mock_user_key_auth():
+            resp = c.post(
+                "/api/trips/1/join",
+                json={"invite_code": "abc123"},
+                headers=USER_API_KEY_HEADERS,
+            )
+        assert resp.status_code == 200
+        assert resp.json()["participants"] == [1, 2]
+
+    def test_join_wrong_invite_code_returns_403(self, client):
+        c, mock_db = client
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(3, None)]),               # auth: user lookup
+            mock_result(rows=[('[1, 2]', 'real-code')]), # SELECT participants, invite_code
+        ]
+        with _mock_user_key_auth():
+            resp = c.post(
+                "/api/trips/1/join",
+                json={"invite_code": "wrong-code"},
+                headers=USER_API_KEY_HEADERS,
+            )
+        assert resp.status_code == 403
+        assert "Invalid invite code" in resp.json()["detail"]
+
+    def test_join_nonexistent_trip_returns_404(self, client):
+        c, mock_db = client
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(3, None)]),  # auth: user lookup
+            mock_result(rows=[]),           # SELECT: trip not found
+        ]
+        with _mock_user_key_auth():
+            resp = c.post(
+                "/api/trips/999/join",
+                json={"invite_code": "abc123"},
+                headers=USER_API_KEY_HEADERS,
+            )
+        assert resp.status_code == 404
+        assert "Trip not found" in resp.json()["detail"]
+
+    def test_join_with_settings_key_returns_403(self, client):
+        c, _ = client
+        resp = c.post("/api/trips/1/join", json={"invite_code": "abc123"}, headers=AUTH_HEADERS)
+        assert resp.status_code == 403
+        assert "Settings key cannot join trips" in resp.json()["detail"]

@@ -74,7 +74,8 @@ async def init_db():
                 end_date TEXT,
                 participants TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                invite_code TEXT
             )
             """,
             """
@@ -218,6 +219,12 @@ async def init_db():
     # Migrate: rename shared_with to participants in expenses
     try:
         await client.execute("ALTER TABLE expenses RENAME COLUMN shared_with TO participants")
+    except Exception:
+        pass
+
+    # Migrate: add invite_code to trips
+    try:
+        await client.execute("ALTER TABLE trips ADD COLUMN invite_code TEXT")
     except Exception:
         pass
 
