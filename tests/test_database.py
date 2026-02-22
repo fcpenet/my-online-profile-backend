@@ -75,13 +75,14 @@ class TestInitDb:
             await db.init_db()
         mock_client.batch.assert_called_once()
         statements = mock_client.batch.call_args[0][0]
-        assert len(statements) == 11
-        # Verify all eleven tables
+        assert len(statements) == 12
+        # Verify all twelve tables
         all_sql = " ".join(statements)
         assert "todos" in all_sql
         assert "documents" in all_sql
         assert "embeddings" in all_sql
         assert "settings" in all_sql
+        assert "invites" in all_sql
         # Settings table should have created_at and expires_at columns
         settings_sql = [s for s in statements if "settings" in s][0]
         assert "created_at" in settings_sql

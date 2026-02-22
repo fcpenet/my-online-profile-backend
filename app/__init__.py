@@ -12,7 +12,7 @@ logging.getLogger("aiohttp.client").setLevel(logging.CRITICAL)
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import close_client, init_db
-from app.routers import todos, rag, settings, expenses, trips, projects, users, organizations
+from app.routers import todos, rag, settings, expenses, trips, projects, users, organizations, invites
 
 _db_initialized = False
 
@@ -57,6 +57,7 @@ app.include_router(trips.router, prefix="/api/trips", tags=["trips"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(organizations.router, prefix="/api/organizations", tags=["organizations"])
+app.include_router(invites.router, prefix="/api/invites", tags=["invites"])
 
 
 @app.get("/api/health")

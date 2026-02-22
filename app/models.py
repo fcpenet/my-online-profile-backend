@@ -222,6 +222,22 @@ class TaskResponse(BaseModel):
     updated_at: str
 
 
+# --- Invites ---
+
+
+class InviteCreate(BaseModel):
+    code: str | None = None
+    max_uses: int = 1
+
+
+class InviteResponse(BaseModel):
+    id: int
+    code: str
+    max_uses: int
+    uses: int
+    created_at: str
+
+
 # --- Users ---
 
 
@@ -229,6 +245,7 @@ class UserRegister(BaseModel):
     email: str
     password: str
     organization_id: int | None = None
+    invite_code: str
 
 
 class UserLogin(BaseModel):

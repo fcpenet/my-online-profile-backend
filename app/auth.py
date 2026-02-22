@@ -71,6 +71,13 @@ async def require_api_key(api_key: str = Security(api_key_header)):
     await get_current_user(api_key)
 
 
+async def require_settings_key(api_key: str = Security(api_key_header)):
+    """Only accepts the settings/superuser key. Rejects user API keys with 403."""
+    user = await get_current_user(api_key)
+    if user is not None:
+        raise HTTPException(status_code=403, detail="Settings key required")
+
+
 async def require_org_access(project_id: int, user: dict | None):
     """Raises 404 if project doesn't exist.
     Raises 403 if user's org doesn't match the project's org.

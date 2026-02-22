@@ -159,6 +159,15 @@ async def init_db():
                 expires_at TEXT
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS invites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                max_uses INTEGER NOT NULL DEFAULT 1,
+                uses INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
         ]
     )
     # Migrate: add columns if the settings table predates the schema change
