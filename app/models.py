@@ -245,7 +245,6 @@ class UserRegister(BaseModel):
     email: str
     password: str
     organization_id: int | None = None
-    invite_code: str
 
 
 class UserLogin(BaseModel):

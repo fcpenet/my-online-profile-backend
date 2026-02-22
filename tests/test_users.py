@@ -6,24 +6,19 @@ import libsql_client
 
 from tests.conftest import mock_result
 
-VALID_INVITE = (1, 0, 5)  # id=1, uses=0, max_uses=5
-
 
 class TestRegister:
     def test_register_success(self, client):
         c, mock_db = client
-        # invite check → email check → INSERT → invite UPDATE
+        # First call: check email exists (no rows), second call: INSERT
         mock_db.execute.side_effect = [
-            mock_result(rows=[VALID_INVITE]),
             mock_result(rows=[]),
             mock_result(rows=[(1, "test@example.com", None, "2024-01-01")]),
-            mock_result(),
         ]
         with patch("app.routers.users._hash_password", return_value="hashed"):
             resp = c.post(
                 "/api/users/register",
-                json={"email": "test@example.com", "password": "mypassword",
-                      "invite_code": "valid-code"},
+                json={"email": "test@example.com", "password": "mypassword"},
             )
         assert resp.status_code == 201
         data = resp.json()
@@ -34,14 +29,10 @@ class TestRegister:
 
     def test_register_duplicate_email_returns_409(self, client):
         c, mock_db = client
-        mock_db.execute.side_effect = [
-            mock_result(rows=[VALID_INVITE]),  # invite valid
-            mock_result(rows=[(1,)]),           # email exists
-        ]
+        mock_db.execute.return_value = mock_result(rows=[(1,)])
         resp = c.post(
             "/api/users/register",
-            json={"email": "test@example.com", "password": "mypassword",
-                  "invite_code": "valid-code"},
+            json={"email": "test@example.com", "password": "mypassword"},
         )
         assert resp.status_code == 409
         assert "already registered" in resp.json()["detail"]
@@ -56,38 +47,12 @@ class TestRegister:
         resp = c.post("/api/users/register", json={"email": "test@example.com"})
         assert resp.status_code == 422
 
-    def test_register_invalid_invite_returns_404(self, client):
+    def test_register_invalid_org_returns_404(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[])
         resp = c.post(
             "/api/users/register",
-            json={"email": "test@example.com", "password": "mypassword",
-                  "invite_code": "bad-code"},
-        )
-        assert resp.status_code == 404
-        assert "Invalid invite code" in resp.json()["detail"]
-
-    def test_register_exhausted_invite_returns_403(self, client):
-        c, mock_db = client
-        mock_db.execute.return_value = mock_result(rows=[(1, 5, 5)])  # uses == max_uses
-        resp = c.post(
-            "/api/users/register",
-            json={"email": "test@example.com", "password": "mypassword",
-                  "invite_code": "full-code"},
-        )
-        assert resp.status_code == 403
-        assert "Invite code exhausted" in resp.json()["detail"]
-
-    def test_register_invalid_org_returns_404(self, client):
-        c, mock_db = client
-        mock_db.execute.side_effect = [
-            mock_result(rows=[VALID_INVITE]),  # invite valid
-            mock_result(rows=[]),              # org not found
-        ]
-        resp = c.post(
-            "/api/users/register",
-            json={"email": "test@example.com", "password": "mypassword",
-                  "organization_id": 999, "invite_code": "valid-code"},
+            json={"email": "test@example.com", "password": "mypassword", "organization_id": 999},
         )
         assert resp.status_code == 404
         assert "Organization not found" in resp.json()["detail"]
@@ -95,19 +60,16 @@ class TestRegister:
     def test_register_calls_db_with_correct_sql(self, client):
         c, mock_db = client
         mock_db.execute.side_effect = [
-            mock_result(rows=[VALID_INVITE]),
             mock_result(rows=[]),
             mock_result(rows=[(1, "test@example.com", None, "2024-01-01")]),
-            mock_result(),
         ]
         with patch("app.routers.users._hash_password", return_value="hashed"):
             c.post(
                 "/api/users/register",
-                json={"email": "test@example.com", "password": "mypassword",
-                      "invite_code": "valid-code"},
+                json={"email": "test@example.com", "password": "mypassword"},
             )
-        # Third call (index 2) should be the INSERT INTO users
-        call_args = mock_db.execute.call_args_list[2][0][0]
+        # Second call should be the INSERT
+        call_args = mock_db.execute.call_args_list[1][0][0]
         assert isinstance(call_args, libsql_client.Statement)
         assert "INSERT INTO users" in call_args.sql
 

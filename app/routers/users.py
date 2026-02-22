@@ -29,22 +29,10 @@ async def _get_org_or_404(org_id: int):
 
 @router.post("/register", status_code=201)
 async def register(body: UserRegister) -> UserResponse:
-    client = get_client()
-
-    # Validate invite code
-    rs = await client.execute(
-        libsql_client.Statement(
-            "SELECT id, uses, max_uses FROM invites WHERE code = ?", [body.invite_code]
-        )
-    )
-    if not rs.rows:
-        raise HTTPException(status_code=404, detail="Invalid invite code")
-    invite_id, uses, max_uses = rs.rows[0]
-    if uses >= max_uses:
-        raise HTTPException(status_code=403, detail="Invite code exhausted")
-
     if body.organization_id is not None:
         await _get_org_or_404(body.organization_id)
+
+    client = get_client()
 
     # Check if email already exists
     rs = await client.execute(
@@ -64,13 +52,6 @@ async def register(body: UserRegister) -> UserResponse:
         )
     )
     row = rs.rows[0]
-
-    # Increment invite uses
-    await client.execute(
-        libsql_client.Statement(
-            "UPDATE invites SET uses = uses + 1 WHERE id = ?", [invite_id]
-        )
-    )
 
     return UserResponse(id=row[0], email=row[1], organization_id=row[2], created_at=row[3])
 
