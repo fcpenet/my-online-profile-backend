@@ -25,6 +25,7 @@ class TestCreateOrganization:
         c, _ = client
         resp = c.post("/api/organizations/", json={}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
+        assert "name" in resp.json()["detail"]
 
     def test_create_without_auth_returns_401(self, client):
         c, _ = client

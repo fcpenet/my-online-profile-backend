@@ -35,11 +35,13 @@ class TestCreateProject:
         c, _ = client
         resp = c.post("/api/projects/", json={"organization_id": 1}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
+        assert "title" in resp.json()["detail"]
 
     def test_create_missing_organization_id_returns_422(self, client):
         c, _ = client
         resp = c.post("/api/projects/", json={"title": "Test"}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
+        assert "organization_id" in resp.json()["detail"]
 
     def test_create_without_auth_returns_401(self, client):
         c, _ = client
@@ -191,6 +193,12 @@ class TestCreateEpic:
         assert data["title"] == "Epic One"
         assert data["project_id"] == 1
 
+    def test_create_missing_title_returns_422(self, client):
+        c, _ = client
+        resp = c.post("/api/projects/1/epics", json={}, headers=AUTH_HEADERS)
+        assert resp.status_code == 422
+        assert "title" in resp.json()["detail"]
+
     def test_create_project_not_found(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[])
@@ -317,6 +325,12 @@ class TestCreateTask:
         assert data["status"] == "todo"
         assert data["label"] == "bug"
         assert data["epic_id"] == 1
+
+    def test_create_missing_title_returns_422(self, client):
+        c, _ = client
+        resp = c.post("/api/projects/1/epics/1/tasks", json={}, headers=AUTH_HEADERS)
+        assert resp.status_code == 422
+        assert "title" in resp.json()["detail"]
 
     def test_create_epic_not_found(self, client):
         c, mock_db = client

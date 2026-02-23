@@ -88,6 +88,7 @@ class TestCreateTrip:
         c, _ = client
         resp = c.post("/api/trips/", json={}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
+        assert "title" in resp.json()["detail"]
 
     def test_create_without_auth_returns_401(self, client):
         c, _ = client
@@ -300,3 +301,9 @@ class TestJoinTrip:
         resp = c.post("/api/trips/1/join", json={"invite_code": "abc123"}, headers=AUTH_HEADERS)
         assert resp.status_code == 403
         assert "Settings key cannot join trips" in resp.json()["detail"]
+
+    def test_join_missing_invite_code_returns_422(self, client):
+        c, _ = client
+        resp = c.post("/api/trips/1/join", json={}, headers=AUTH_HEADERS)
+        assert resp.status_code == 422
+        assert "invite_code" in resp.json()["detail"]

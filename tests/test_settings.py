@@ -73,3 +73,4 @@ class TestRotateKey:
         c, _ = client
         resp = c.post("/api/settings/rotate-key", json={}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
+        assert "new_key" in resp.json()["detail"]

@@ -74,11 +74,20 @@ class TestCreateExpense:
         c, _ = client
         resp = c.post("/api/expenses/", json={}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
+        assert "title" in resp.json()["detail"]
+        assert "amount" in resp.json()["detail"]
 
     def test_create_missing_title_returns_422(self, client):
         c, _ = client
         resp = c.post("/api/expenses/", json={"amount": 10.0}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
+        assert "title" in resp.json()["detail"]
+
+    def test_create_missing_amount_returns_422(self, client):
+        c, _ = client
+        resp = c.post("/api/expenses/", json={"title": "Dinner"}, headers=AUTH_HEADERS)
+        assert resp.status_code == 422
+        assert "amount" in resp.json()["detail"]
 
     def test_create_without_auth_returns_401(self, client):
         c, _ = client

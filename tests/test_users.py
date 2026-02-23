@@ -41,11 +41,20 @@ class TestRegister:
         c, _ = client
         resp = c.post("/api/users/register", json={})
         assert resp.status_code == 422
+        assert "email" in resp.json()["detail"]
+        assert "password" in resp.json()["detail"]
 
     def test_register_missing_password_returns_422(self, client):
         c, _ = client
         resp = c.post("/api/users/register", json={"email": "test@example.com"})
         assert resp.status_code == 422
+        assert "password" in resp.json()["detail"]
+
+    def test_register_missing_email_returns_422(self, client):
+        c, _ = client
+        resp = c.post("/api/users/register", json={"password": "mypassword"})
+        assert resp.status_code == 422
+        assert "email" in resp.json()["detail"]
 
     def test_register_invalid_org_returns_404(self, client):
         c, mock_db = client
@@ -150,3 +159,17 @@ class TestLogin:
         c, _ = client
         resp = c.post("/api/users/login", json={})
         assert resp.status_code == 422
+        assert "email" in resp.json()["detail"]
+        assert "password" in resp.json()["detail"]
+
+    def test_login_missing_email_returns_422(self, client):
+        c, _ = client
+        resp = c.post("/api/users/login", json={"password": "mypassword"})
+        assert resp.status_code == 422
+        assert "email" in resp.json()["detail"]
+
+    def test_login_missing_password_returns_422(self, client):
+        c, _ = client
+        resp = c.post("/api/users/login", json={"email": "test@example.com"})
+        assert resp.status_code == 422
+        assert "password" in resp.json()["detail"]

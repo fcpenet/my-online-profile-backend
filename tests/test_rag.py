@@ -61,6 +61,7 @@ class TestIngestDocument:
         c, _ = client
         resp = c.post("/api/rag/ingest", json={}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
+        assert "content" in resp.json()["detail"]
 
 
 class TestQueryDocument:
@@ -128,6 +129,7 @@ class TestQueryDocument:
         c, _ = client
         resp = c.post("/api/rag/query", json={})
         assert resp.status_code == 422
+        assert "question" in resp.json()["detail"]
 
 
 class TestListDocuments:

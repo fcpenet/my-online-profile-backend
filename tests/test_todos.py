@@ -35,6 +35,7 @@ class TestCreateTodo:
         c, _ = client
         resp = c.post("/api/todos/", json={}, headers=AUTH_HEADERS)
         assert resp.status_code == 422
+        assert "title" in resp.json()["detail"]
 
     def test_create_calls_db_with_correct_sql(self, client):
         c, mock_db = client

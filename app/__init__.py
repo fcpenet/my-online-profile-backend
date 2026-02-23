@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 load_dotenv()
@@ -39,6 +41,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="My Profile Backend", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = []
+    for error in exc.errors():
+        field = error["loc"][-1] if error["loc"] else "unknown"
+        errors.append(f"{field}: {error['msg']}")
+    return JSONResponse(status_code=422, content={"detail": "; ".join(errors)})
+
 
 app.add_middleware(InitDbMiddleware)
 app.add_middleware(
