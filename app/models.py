@@ -231,6 +231,43 @@ class TaskResponse(BaseModel):
     updated_at: str
 
 
+# --- Tags ---
+
+
+class TagCreate(BaseModel):
+    name: str
+
+
+class TagResponse(BaseModel):
+    id: int
+    name: str
+    created_at: str
+
+
+# --- Payments ---
+
+
+class PaymentCreate(BaseModel):
+    date: str
+    expense_ids: list[int] | None = None
+    tag_ids: list[int] | None = None
+
+
+class PaymentUpdate(BaseModel):
+    date: str | None = None
+    expense_ids: list[int] | None = None
+    tag_ids: list[int] | None = None
+
+
+class PaymentResponse(BaseModel):
+    id: int
+    date: str
+    expense_ids: list[int] | None
+    tag_ids: list[int] | None
+    created_at: str
+    updated_at: str
+
+
 # --- Invites ---
 
 
