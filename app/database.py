@@ -91,7 +91,8 @@ async def init_db():
                 participants TEXT,
                 trip_id INTEGER REFERENCES trips(id),
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                is_expected INTEGER NOT NULL DEFAULT 0
             )
             """,
             """
@@ -225,6 +226,12 @@ async def init_db():
     # Migrate: add invite_code to trips
     try:
         await client.execute("ALTER TABLE trips ADD COLUMN invite_code TEXT")
+    except Exception:
+        pass
+
+    # Migrate: add is_expected to expenses
+    try:
+        await client.execute("ALTER TABLE expenses ADD COLUMN is_expected INTEGER NOT NULL DEFAULT 0")
     except Exception:
         pass
 

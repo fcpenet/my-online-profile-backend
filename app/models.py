@@ -97,6 +97,7 @@ class ExpenseCreate(BaseModel):
     payor_id: int | None = None
     participants: list[int] | None = None
     trip_id: int | None = None
+    is_expected: bool = False
 
 
 class ExpenseUpdate(BaseModel):
@@ -109,6 +110,7 @@ class ExpenseUpdate(BaseModel):
     payor_id: int | None = None
     participants: list[int] | None = None
     trip_id: int | None = None
+    is_expected: bool | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -124,6 +126,7 @@ class ExpenseResponse(BaseModel):
     trip_id: int | None
     created_at: str
     updated_at: str
+    is_expected: bool
 
 
 # --- Organizations ---

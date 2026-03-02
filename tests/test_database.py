@@ -99,9 +99,9 @@ class TestInitDb:
         db._client = None
         with patch("app.database.get_client", return_value=mock_client):
             await db.init_db()
-        # 10 ALTER TABLE (migration) + SELECT check + INSERT OR REPLACE = 12
-        assert mock_client.execute.call_count == 12
-        insert_stmt = mock_client.execute.call_args_list[11][0][0]
+        # 11 ALTER TABLE (migration) + SELECT check + INSERT OR REPLACE = 13
+        assert mock_client.execute.call_count == 13
+        insert_stmt = mock_client.execute.call_args_list[12][0][0]
         assert "INSERT OR REPLACE INTO settings" in insert_stmt.sql
         assert "expires_at" in insert_stmt.sql
         # Generated key should be a non-empty string
@@ -117,17 +117,17 @@ class TestInitDb:
         # datetime('now') returns current time (after the expiry)
         now_result = MagicMock()
         now_result.rows = [("2025-01-01 00:00:00",)]
-        # 10 ALTER TABLE + SELECT key + SELECT now + INSERT = 13 calls
+        # 11 ALTER TABLE + SELECT key + SELECT now + INSERT = 14 calls
         alter_ok = MagicMock()
         mock_client.execute.side_effect = [
-            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
+            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
             expired, now_result, MagicMock()
         ]
         db._client = None
         with patch("app.database.get_client", return_value=mock_client):
             await db.init_db()
-        assert mock_client.execute.call_count == 13
-        insert_stmt = mock_client.execute.call_args_list[12][0][0]
+        assert mock_client.execute.call_count == 14
+        insert_stmt = mock_client.execute.call_args_list[13][0][0]
         assert "INSERT OR REPLACE INTO settings" in insert_stmt.sql
 
     @pytest.mark.asyncio
@@ -140,14 +140,14 @@ class TestInitDb:
         # datetime('now') returns current time (before expiry)
         now_result = MagicMock()
         now_result.rows = [("2025-01-01 00:00:00",)]
-        # 10 ALTER TABLE + SELECT key + SELECT now = 12 calls
+        # 11 ALTER TABLE + SELECT key + SELECT now = 13 calls
         alter_ok = MagicMock()
         mock_client.execute.side_effect = [
-            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
+            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
             valid, now_result
         ]
         db._client = None
         with patch("app.database.get_client", return_value=mock_client):
             await db.init_db()
-        # No INSERT — just the 12 calls
-        assert mock_client.execute.call_count == 12
+        # No INSERT — just the 13 calls
+        assert mock_client.execute.call_count == 13

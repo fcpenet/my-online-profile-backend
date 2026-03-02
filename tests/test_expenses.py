@@ -16,9 +16,9 @@ def _mock_user_key_auth():
     return patch("app.auth.get_api_key", side_effect=_different_key)
 
 # columns: id, title, amount, tag, category, location, description,
-#          payor_id, participants, trip_id, created_at, updated_at
+#          payor_id, participants, trip_id, created_at, updated_at, is_expected
 SAMPLE_ROW = (1, "Dinner", 45.99, "meal", "Food", "Restaurant", "Team dinner",
-              1, '[1, 2]', 2, "2024-01-01", "2024-01-01")
+              1, '[1, 2]', 2, "2024-01-01", "2024-01-01", 0)
 
 
 class TestCreateExpense:
@@ -56,7 +56,7 @@ class TestCreateExpense:
     def test_create_minimal(self, client):
         c, mock_db = client
         row = (2, "Coffee", 5.0, None, None, None, None, None, None, None,
-               "2024-01-01", "2024-01-01")
+               "2024-01-01", "2024-01-01", 0)
         mock_db.execute.return_value = mock_result(rows=[row])
         resp = c.post(
             "/api/expenses/",
@@ -161,7 +161,7 @@ class TestCreateExpense:
     def test_create_user_in_trip_succeeds(self, client):
         c, mock_db = client
         row = (2, "Coffee", 5.0, None, None, None, None, None, None, 2,
-               "2024-01-01", "2024-01-01")
+               "2024-01-01", "2024-01-01", 0)
         # user_id=1, trip participants=[1, 2] — user is a member
         mock_db.execute.side_effect = [
             mock_result(rows=[(1, None)]),           # auth: user lookup
@@ -200,7 +200,7 @@ class TestListExpenses:
     def test_list_multiple(self, client):
         c, mock_db = client
         row2 = (2, "Lunch", 15.0, None, "Food", None, None, None, None, None,
-                "2024-01-02", "2024-01-02")
+                "2024-01-02", "2024-01-02", 0)
         mock_db.execute.return_value = mock_result(rows=[row2, SAMPLE_ROW])
         resp = c.get("/api/expenses/", headers=AUTH_HEADERS)
         assert resp.status_code == 200
@@ -243,7 +243,7 @@ class TestUpdateExpense:
         c, mock_db = client
         updated_row = (1, "Dinner", 50.0, "meal", "Food", "Restaurant",
                        "Team dinner", 1, '[1, 2]', 2,
-                       "2024-01-01", "2024-01-02")
+                       "2024-01-01", "2024-01-02", 0)
         mock_db.execute.return_value = mock_result(rows=[updated_row])
         resp = c.patch("/api/expenses/1", json={"amount": 50.0}, headers=AUTH_HEADERS)
         assert resp.status_code == 200
@@ -253,7 +253,7 @@ class TestUpdateExpense:
         c, mock_db = client
         updated_row = (1, "Dinner", 45.99, "meal", "Food", "Restaurant",
                        "Team dinner", 1, '[1, 2, 3]', 2,
-                       "2024-01-01", "2024-01-02")
+                       "2024-01-01", "2024-01-02", 0)
         mock_db.execute.side_effect = [
             mock_result(rows=[(2,)]),            # expense's current trip_id
             mock_result(rows=[('[1, 2, 3]',)]),  # trip's participants

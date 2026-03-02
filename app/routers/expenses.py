@@ -12,7 +12,7 @@ router = APIRouter()
 
 def _row_to_expense(row) -> ExpenseResponse:
     # columns: id, title, amount, tag, category, location, description,
-    #          payor_id, participants, trip_id, created_at, updated_at
+    #          payor_id, participants, trip_id, created_at, updated_at, is_expected
     participants = json.loads(row[8]) if row[8] else None
     return ExpenseResponse(
         id=row[0],
@@ -27,6 +27,7 @@ def _row_to_expense(row) -> ExpenseResponse:
         trip_id=row[9],
         created_at=row[10],
         updated_at=row[11],
+        is_expected=bool(row[12]) if row[12] is not None else False,
     )
 
 
@@ -110,9 +111,10 @@ async def create_expense(
     rs = await client.execute(
         libsql_client.Statement(
             "INSERT INTO expenses (title, amount, tag, category, location, description, "
-            "payor_id, participants, trip_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+            "payor_id, participants, trip_id, is_expected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
             [body.title, body.amount, body.tag, body.category, body.location,
-             body.description, body.payor_id, participants_json, body.trip_id],
+             body.description, body.payor_id, participants_json, body.trip_id,
+             int(body.is_expected)],
         )
     )
     return _row_to_expense(rs.rows[0])
