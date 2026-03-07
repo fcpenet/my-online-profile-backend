@@ -325,6 +325,7 @@ class UserResponse(BaseModel):
     id: int
     email: str
     organization_id: int | None
+    role: str
     created_at: str
 
 

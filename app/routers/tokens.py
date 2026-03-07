@@ -3,7 +3,7 @@ import secrets
 import libsql_client
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import require_api_key
+from app.auth import require_admin
 from app.database import get_client
 from app.models import TokenCreate, TokenResponse, TokenValidateResponse
 
@@ -22,7 +22,7 @@ def _row_to_token(row) -> TokenResponse:
     )
 
 
-@router.post("/", status_code=201, dependencies=[Depends(require_api_key)])
+@router.post("/", status_code=201, dependencies=[Depends(require_admin)])
 async def create_token(body: TokenCreate) -> TokenResponse:
     token_value = secrets.token_urlsafe(32)
     client = get_client()
@@ -35,7 +35,7 @@ async def create_token(body: TokenCreate) -> TokenResponse:
     return _row_to_token(rs.rows[0])
 
 
-@router.get("/", dependencies=[Depends(require_api_key)])
+@router.get("/", dependencies=[Depends(require_admin)])
 async def list_tokens() -> list[TokenResponse]:
     client = get_client()
     rs = await client.execute("SELECT * FROM tokens ORDER BY created_at DESC")
@@ -101,7 +101,7 @@ async def use_token(token: str) -> TokenResponse:
     return _row_to_token(rs.rows[0])
 
 
-@router.get("/{token_id}", dependencies=[Depends(require_api_key)])
+@router.get("/{token_id}", dependencies=[Depends(require_admin)])
 async def get_token(token_id: int) -> TokenResponse:
     client = get_client()
     rs = await client.execute(
@@ -112,7 +112,7 @@ async def get_token(token_id: int) -> TokenResponse:
     return _row_to_token(rs.rows[0])
 
 
-@router.delete("/{token_id}", dependencies=[Depends(require_api_key)])
+@router.delete("/{token_id}", dependencies=[Depends(require_admin)])
 async def delete_token(token_id: int):
     client = get_client()
     rs = await client.execute(

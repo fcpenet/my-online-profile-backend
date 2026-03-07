@@ -69,7 +69,7 @@ class TestCreateInvite:
     def test_create_with_user_key_returns_403(self, client):
         c, mock_db = client
         # User key lookup: return a real user row so get_current_user returns a user dict
-        mock_db.execute.return_value = mock_result(rows=[(1, None)])
+        mock_db.execute.return_value = mock_result(rows=[(1, None, "user")])
         with _mock_user_key_auth():
             resp = c.post(
                 "/api/invites/",

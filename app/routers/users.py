@@ -47,13 +47,13 @@ async def register(body: UserRegister) -> UserResponse:
     rs = await client.execute(
         libsql_client.Statement(
             "INSERT INTO users (email, password_hash, organization_id) VALUES (?, ?, ?) "
-            "RETURNING id, email, organization_id, created_at",
+            "RETURNING id, email, organization_id, role, created_at",
             [body.email, password_hash, body.organization_id],
         )
     )
     row = rs.rows[0]
 
-    return UserResponse(id=row[0], email=row[1], organization_id=row[2], created_at=row[3])
+    return UserResponse(id=row[0], email=row[1], organization_id=row[2], role=row[3], created_at=row[4])
 
 
 @router.post("/login")

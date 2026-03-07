@@ -150,7 +150,8 @@ async def init_db():
                 api_key_expires_at TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                organization_id INTEGER REFERENCES organizations(id)
+                organization_id INTEGER REFERENCES organizations(id),
+                role TEXT NOT NULL DEFAULT 'user'
             )
             """,
             """
@@ -265,6 +266,12 @@ async def init_db():
     # Migrate: rename tag to tags in expenses
     try:
         await client.execute("ALTER TABLE expenses RENAME COLUMN tag TO tags")
+    except Exception:
+        pass
+
+    # Migrate: add role to users
+    try:
+        await client.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
     except Exception:
         pass
 

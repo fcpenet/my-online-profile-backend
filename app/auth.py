@@ -57,18 +57,25 @@ async def get_current_user(api_key: str = Security(api_key_header)) -> dict | No
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
-            "SELECT id, organization_id FROM users WHERE api_key = ? AND api_key_expires_at > datetime('now')",
+            "SELECT id, organization_id, role FROM users WHERE api_key = ? AND api_key_expires_at > datetime('now')",
             [api_key],
         )
     )
     if rs.rows:
-        return {"id": rs.rows[0][0], "organization_id": rs.rows[0][1]}
+        return {"id": rs.rows[0][0], "organization_id": rs.rows[0][1], "role": rs.rows[0][2]}
     raise HTTPException(status_code=403, detail="Invalid API key")
 
 
 async def require_api_key(api_key: str = Security(api_key_header)):
     """Backwards-compatible auth dependency. Validates key but discards user info."""
     await get_current_user(api_key)
+
+
+async def require_admin(api_key: str = Security(api_key_header)):
+    """Accepts the settings key, or user keys where role = 'admin'."""
+    user = await get_current_user(api_key)
+    if user is not None and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
 
 
 async def require_settings_key(api_key: str = Security(api_key_header)):

@@ -102,9 +102,9 @@ class TestInitDb:
         db._client = None
         with patch("app.database.get_client", return_value=mock_client):
             await db.init_db()
-        # 12 ALTER TABLE (migration) + SELECT check + INSERT OR REPLACE = 14
-        assert mock_client.execute.call_count == 14
-        insert_stmt = mock_client.execute.call_args_list[13][0][0]
+        # 13 ALTER TABLE (migration) + SELECT check + INSERT OR REPLACE = 15
+        assert mock_client.execute.call_count == 15
+        insert_stmt = mock_client.execute.call_args_list[14][0][0]
         assert "INSERT OR REPLACE INTO settings" in insert_stmt.sql
         assert "expires_at" in insert_stmt.sql
         # Generated key should be a non-empty string
@@ -120,17 +120,17 @@ class TestInitDb:
         # datetime('now') returns current time (after the expiry)
         now_result = MagicMock()
         now_result.rows = [("2025-01-01 00:00:00",)]
-        # 12 ALTER TABLE + SELECT key + SELECT now + INSERT = 15 calls
+        # 13 ALTER TABLE + SELECT key + SELECT now + INSERT = 16 calls
         alter_ok = MagicMock()
         mock_client.execute.side_effect = [
-            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
+            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
             expired, now_result, MagicMock()
         ]
         db._client = None
         with patch("app.database.get_client", return_value=mock_client):
             await db.init_db()
-        assert mock_client.execute.call_count == 15
-        insert_stmt = mock_client.execute.call_args_list[14][0][0]
+        assert mock_client.execute.call_count == 16
+        insert_stmt = mock_client.execute.call_args_list[15][0][0]
         assert "INSERT OR REPLACE INTO settings" in insert_stmt.sql
 
     @pytest.mark.asyncio
@@ -143,14 +143,14 @@ class TestInitDb:
         # datetime('now') returns current time (before expiry)
         now_result = MagicMock()
         now_result.rows = [("2025-01-01 00:00:00",)]
-        # 12 ALTER TABLE + SELECT key + SELECT now = 14 calls
+        # 13 ALTER TABLE + SELECT key + SELECT now = 15 calls
         alter_ok = MagicMock()
         mock_client.execute.side_effect = [
-            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
+            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
             valid, now_result
         ]
         db._client = None
         with patch("app.database.get_client", return_value=mock_client):
             await db.init_db()
-        # No INSERT — just the 14 calls
-        assert mock_client.execute.call_count == 14
+        # No INSERT — just the 15 calls
+        assert mock_client.execute.call_count == 15

@@ -236,7 +236,7 @@ class TestJoinTrip:
         updated = (1, "Europe 2024", "Summer trip", "2024-06-01", "2024-06-15",
                    '[1, 2, 3]', "2024-01-01", "2024-01-02", "abc123")
         mock_db.execute.side_effect = [
-            mock_result(rows=[(3, None)]),             # auth: user lookup (id=3)
+            mock_result(rows=[(3, None, "user")]),        # auth: user lookup (id=3)
             mock_result(rows=[('[1, 2]', 'abc123')]),  # SELECT participants, invite_code
             mock_result(rows=[updated]),               # UPDATE RETURNING *
         ]
@@ -253,7 +253,7 @@ class TestJoinTrip:
     def test_join_already_member_is_idempotent(self, client):
         c, mock_db = client
         mock_db.execute.side_effect = [
-            mock_result(rows=[(1, None)]),             # auth: user lookup (id=1)
+            mock_result(rows=[(1, None, "user")]),        # auth: user lookup (id=1)
             mock_result(rows=[('[1, 2]', 'abc123')]),  # SELECT participants, invite_code
             mock_result(rows=[TRIP_ROW]),              # SELECT * (already member)
         ]
@@ -269,7 +269,7 @@ class TestJoinTrip:
     def test_join_wrong_invite_code_returns_403(self, client):
         c, mock_db = client
         mock_db.execute.side_effect = [
-            mock_result(rows=[(3, None)]),               # auth: user lookup
+            mock_result(rows=[(3, None, "user")]),         # auth: user lookup
             mock_result(rows=[('[1, 2]', 'real-code')]), # SELECT participants, invite_code
         ]
         with _mock_user_key_auth():
@@ -284,8 +284,8 @@ class TestJoinTrip:
     def test_join_nonexistent_trip_returns_404(self, client):
         c, mock_db = client
         mock_db.execute.side_effect = [
-            mock_result(rows=[(3, None)]),  # auth: user lookup
-            mock_result(rows=[]),           # SELECT: trip not found
+            mock_result(rows=[(3, None, "user")]),  # auth: user lookup
+            mock_result(rows=[]),                   # SELECT: trip not found
         ]
         with _mock_user_key_auth():
             resp = c.post(

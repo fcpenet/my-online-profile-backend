@@ -13,7 +13,7 @@ class TestRegister:
         # First call: check email exists (no rows), second call: INSERT
         mock_db.execute.side_effect = [
             mock_result(rows=[]),
-            mock_result(rows=[(1, "test@example.com", None, "2024-01-01")]),
+            mock_result(rows=[(1, "test@example.com", None, "user", "2024-01-01")]),
         ]
         with patch("app.routers.users._hash_password", return_value="hashed"):
             resp = c.post(
@@ -25,6 +25,7 @@ class TestRegister:
         assert data["email"] == "test@example.com"
         assert data["id"] == 1
         assert data["organization_id"] is None
+        assert data["role"] == "user"
         assert "password" not in data
 
     def test_register_duplicate_email_returns_409(self, client):
@@ -70,7 +71,7 @@ class TestRegister:
         c, mock_db = client
         mock_db.execute.side_effect = [
             mock_result(rows=[]),
-            mock_result(rows=[(1, "test@example.com", None, "2024-01-01")]),
+            mock_result(rows=[(1, "test@example.com", None, "user", "2024-01-01")]),
         ]
         with patch("app.routers.users._hash_password", return_value="hashed"):
             c.post(

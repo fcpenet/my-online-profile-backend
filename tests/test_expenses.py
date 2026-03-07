@@ -148,7 +148,7 @@ class TestCreateExpense:
         c, mock_db = client
         # user_id=3, trip participants=[1, 2] — user not a member
         mock_db.execute.side_effect = [
-            mock_result(rows=[(3, None)]),           # auth: user lookup
+            mock_result(rows=[(3, None, "user")]),   # auth: user lookup
             mock_result(rows=[('[1, 2]',)]),         # _get_trip_participants
         ]
         with _mock_user_key_auth():
@@ -166,7 +166,7 @@ class TestCreateExpense:
                "2024-01-01", "2024-01-01", 0)
         # user_id=1, trip participants=[1, 2] — user is a member
         mock_db.execute.side_effect = [
-            mock_result(rows=[(1, None)]),           # auth: user lookup
+            mock_result(rows=[(1, None, "user")]),   # auth: user lookup
             mock_result(rows=[('[1, 2]',)]),         # _get_trip_participants
             mock_result(rows=[row]),                 # INSERT result
         ]
