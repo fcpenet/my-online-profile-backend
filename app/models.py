@@ -323,6 +323,10 @@ class UserLogin(BaseModel):
     password: str
 
 
+class UserRoleUpdate(BaseModel):
+    role: str
+
+
 class UserResponse(BaseModel):
     id: int
     email: str
@@ -333,4 +337,4 @@ class UserResponse(BaseModel):
 
 class LoginResponse(BaseModel):
     api_key: str
-    expires_at: str
+    expires_at: str | None

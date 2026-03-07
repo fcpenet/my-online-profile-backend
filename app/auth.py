@@ -53,11 +53,15 @@ async def get_current_user(api_key: str = Security(api_key_header)) -> dict | No
     stored_key = await get_api_key()
     if stored_key and api_key == stored_key:
         return None
-    # Check user API keys
+    # Check user tokens
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
-            "SELECT id, organization_id, role FROM users WHERE api_key = ? AND api_key_expires_at > datetime('now')",
+            "SELECT u.id, u.organization_id, u.role "
+            "FROM tokens t JOIN users u ON t.user_id = u.id "
+            "WHERE t.token = ? "
+            "AND (t.expires_at IS NULL OR t.expires_at > datetime('now')) "
+            "AND (t.max_uses = 0 OR t.uses < t.max_uses)",
             [api_key],
         )
     )

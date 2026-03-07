@@ -2,10 +2,11 @@ import secrets
 
 import bcrypt
 import libsql_client
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth import require_admin
 from app.database import get_client
-from app.models import UserRegister, UserLogin, UserResponse, LoginResponse
+from app.models import UserRegister, UserLogin, UserResponse, LoginResponse, UserRoleUpdate
 
 router = APIRouter()
 
@@ -63,32 +64,57 @@ async def login(body: UserLogin) -> LoginResponse:
     # Look up user by email
     rs = await client.execute(
         libsql_client.Statement(
-            "SELECT id, password_hash, api_key, api_key_expires_at FROM users WHERE email = ?",
+            "SELECT id, password_hash FROM users WHERE email = ?",
             [body.email],
         )
     )
     if not rs.rows:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    user_id, password_hash, api_key, expires_at = rs.rows[0]
+    user_id, password_hash = rs.rows[0]
 
     if not _verify_password(body.password, password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Check if existing key is still valid
-    if api_key and expires_at:
-        now_rs = await client.execute("SELECT datetime('now')")
-        now = now_rs.rows[0][0]
-        if now < expires_at:
-            return LoginResponse(api_key=api_key, expires_at=expires_at)
+    # Return an existing valid token if one exists
+    rs = await client.execute(
+        libsql_client.Statement(
+            "SELECT token, expires_at FROM tokens "
+            "WHERE user_id = ? "
+            "AND (expires_at IS NULL OR expires_at > datetime('now')) "
+            "AND (max_uses = 0 OR uses < max_uses) "
+            "ORDER BY created_at DESC LIMIT 1",
+            [user_id],
+        )
+    )
+    if rs.rows:
+        return LoginResponse(api_key=rs.rows[0][0], expires_at=rs.rows[0][1])
 
-    # Generate new key
+    # Create a new token with unlimited uses and 1-day expiry
     new_key = secrets.token_urlsafe(32)
     rs = await client.execute(
         libsql_client.Statement(
-            "UPDATE users SET api_key = ?, api_key_expires_at = datetime('now', '+24 hours'), "
-            "updated_at = datetime('now') WHERE id = ? RETURNING api_key_expires_at",
+            "INSERT INTO tokens (token, max_uses, expires_at, user_id) "
+            "VALUES (?, 0, datetime('now', '+1 day'), ?) "
+            "RETURNING token, expires_at",
             [new_key, user_id],
         )
     )
-    return LoginResponse(api_key=new_key, expires_at=rs.rows[0][0])
+    row = rs.rows[0]
+    return LoginResponse(api_key=row[0], expires_at=row[1])
+
+
+@router.patch("/{user_id}/role", dependencies=[Depends(require_admin)])
+async def update_user_role(user_id: int, body: UserRoleUpdate) -> UserResponse:
+    client = get_client()
+    rs = await client.execute(
+        libsql_client.Statement(
+            "UPDATE users SET role = ?, updated_at = datetime('now') "
+            "WHERE id = ? RETURNING id, email, organization_id, role, created_at",
+            [body.role, user_id],
+        )
+    )
+    if not rs.rows:
+        raise HTTPException(status_code=404, detail="User not found")
+    row = rs.rows[0]
+    return UserResponse(id=row[0], email=row[1], organization_id=row[2], role=row[3], created_at=row[4])
