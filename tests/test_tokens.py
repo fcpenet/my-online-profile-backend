@@ -4,10 +4,11 @@ import libsql_client
 
 from tests.conftest import AUTH_HEADERS, mock_result
 
-# columns: id, token, max_uses, uses, expires_at, created_at
-TOKEN_ROW = (1, "abc123tokenvalue", 5, 2, None, "2024-01-01")
+# columns: id, token, max_uses, uses, expires_at, created_at, user_id
+TOKEN_ROW = (1, "abc123tokenvalue", 5, 2, None, "2024-01-01", None)
 
 # validate query adds a 7th column: not_expired (1=True, 0=False)
+# (does not include user_id — custom SELECT)
 VALIDATE_ROW = (1, "abc123tokenvalue", 5, 2, None, "2024-01-01", 1)
 
 
@@ -23,10 +24,11 @@ class TestCreateToken:
         assert data["max_uses"] == 5
         assert data["uses"] == 2
         assert data["expires_at"] is None
+        assert data["user_id"] is None
 
     def test_create_with_options(self, client):
         c, mock_db = client
-        row = (2, "newtoken", 10, 0, "2099-01-01", "2024-01-01")
+        row = (2, "newtoken", 10, 0, "2099-01-01", "2024-01-01", None)
         mock_db.execute.return_value = mock_result(rows=[row])
         resp = c.post(
             "/api/tokens/",
@@ -37,6 +39,32 @@ class TestCreateToken:
         data = resp.json()
         assert data["max_uses"] == 10
         assert data["expires_at"] == "2099-01-01"
+
+    def test_create_with_user_id(self, client):
+        c, mock_db = client
+        row = (3, "usertoken", 1, 0, None, "2024-01-01", 42)
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(42,)]),   # user validation
+            mock_result(rows=[row]),     # INSERT result
+        ]
+        resp = c.post(
+            "/api/tokens/",
+            json={"user_id": 42},
+            headers=AUTH_HEADERS,
+        )
+        assert resp.status_code == 201
+        assert resp.json()["user_id"] == 42
+
+    def test_create_invalid_user_returns_404(self, client):
+        c, mock_db = client
+        mock_db.execute.return_value = mock_result(rows=[])
+        resp = c.post(
+            "/api/tokens/",
+            json={"user_id": 999},
+            headers=AUTH_HEADERS,
+        )
+        assert resp.status_code == 404
+        assert "User not found" in resp.json()["detail"]
 
     def test_create_without_auth_returns_401(self, client):
         c, _ = client
@@ -61,7 +89,7 @@ class TestListTokens:
 
     def test_list_multiple(self, client):
         c, mock_db = client
-        row2 = (2, "anothertoken", 1, 0, None, "2024-01-02")
+        row2 = (2, "anothertoken", 1, 0, None, "2024-01-02", None)
         mock_db.execute.return_value = mock_result(rows=[TOKEN_ROW, row2])
         resp = c.get("/api/tokens/", headers=AUTH_HEADERS)
         assert resp.status_code == 200
@@ -156,7 +184,7 @@ class TestValidateToken:
 class TestUseToken:
     def test_use_existing_token(self, client):
         c, mock_db = client
-        updated_row = (1, "abc123tokenvalue", 5, 3, None, "2024-01-01")
+        updated_row = (1, "abc123tokenvalue", 5, 3, None, "2024-01-01", None)
         mock_db.execute.side_effect = [
             mock_result(rows=[TOKEN_ROW]),   # SELECT token
             mock_result(rows=[updated_row]), # UPDATE uses
@@ -175,7 +203,7 @@ class TestUseToken:
 
     def test_use_exhausted_returns_410(self, client):
         c, mock_db = client
-        exhausted_row = (1, "abc123tokenvalue", 5, 5, None, "2024-01-01")
+        exhausted_row = (1, "abc123tokenvalue", 5, 5, None, "2024-01-01", None)
         mock_db.execute.return_value = mock_result(rows=[exhausted_row])
         resp = c.post("/api/tokens/use/abc123tokenvalue")
         assert resp.status_code == 410
@@ -183,7 +211,7 @@ class TestUseToken:
 
     def test_use_expired_returns_410(self, client):
         c, mock_db = client
-        expired_row = (1, "abc123tokenvalue", 5, 2, "2020-01-01 00:00:00", "2024-01-01")
+        expired_row = (1, "abc123tokenvalue", 5, 2, "2020-01-01 00:00:00", "2024-01-01", None)
         now_result = mock_result(rows=[("2025-01-01 00:00:00",)])
         mock_db.execute.side_effect = [
             mock_result(rows=[expired_row]),  # SELECT token
@@ -195,8 +223,8 @@ class TestUseToken:
 
     def test_use_unlimited_token(self, client):
         c, mock_db = client
-        unlimited_row = (1, "abc123tokenvalue", 0, 50, None, "2024-01-01")
-        updated_row = (1, "abc123tokenvalue", 0, 51, None, "2024-01-01")
+        unlimited_row = (1, "abc123tokenvalue", 0, 50, None, "2024-01-01", None)
+        updated_row = (1, "abc123tokenvalue", 0, 51, None, "2024-01-01", None)
         mock_db.execute.side_effect = [
             mock_result(rows=[unlimited_row]),  # SELECT token
             mock_result(rows=[updated_row]),    # UPDATE uses

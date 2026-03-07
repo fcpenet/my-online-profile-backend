@@ -274,6 +274,7 @@ class PaymentResponse(BaseModel):
 class TokenCreate(BaseModel):
     max_uses: int = 1
     expires_at: str | None = None
+    user_id: int | None = None
 
 
 class TokenResponse(BaseModel):
@@ -283,6 +284,7 @@ class TokenResponse(BaseModel):
     uses: int
     expires_at: str | None
     created_at: str
+    user_id: int | None
 
 
 class TokenValidateResponse(BaseModel):

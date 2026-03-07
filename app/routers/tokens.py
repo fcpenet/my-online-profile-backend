@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 def _row_to_token(row) -> TokenResponse:
-    # columns: id, token, max_uses, uses, expires_at, created_at
+    # columns: id, token, max_uses, uses, expires_at, created_at, user_id
     return TokenResponse(
         id=row[0],
         token=row[1],
@@ -19,17 +19,26 @@ def _row_to_token(row) -> TokenResponse:
         uses=row[3],
         expires_at=row[4],
         created_at=row[5],
+        user_id=row[6],
     )
 
 
 @router.post("/", status_code=201, dependencies=[Depends(require_admin)])
 async def create_token(body: TokenCreate) -> TokenResponse:
+    if body.user_id is not None:
+        client = get_client()
+        rs = await client.execute(
+            libsql_client.Statement("SELECT id FROM users WHERE id = ?", [body.user_id])
+        )
+        if not rs.rows:
+            raise HTTPException(status_code=404, detail="User not found")
+
     token_value = secrets.token_urlsafe(32)
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
-            "INSERT INTO tokens (token, max_uses, expires_at) VALUES (?, ?, ?) RETURNING *",
-            [token_value, body.max_uses, body.expires_at],
+            "INSERT INTO tokens (token, max_uses, expires_at, user_id) VALUES (?, ?, ?, ?) RETURNING *",
+            [token_value, body.max_uses, body.expires_at, body.user_id],
         )
     )
     return _row_to_token(rs.rows[0])

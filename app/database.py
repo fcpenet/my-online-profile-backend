@@ -195,7 +195,8 @@ async def init_db():
                 max_uses INTEGER NOT NULL DEFAULT 1,
                 uses INTEGER NOT NULL DEFAULT 0,
                 expires_at TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                user_id INTEGER REFERENCES users(id)
             )
             """,
         ]
@@ -272,6 +273,12 @@ async def init_db():
     # Migrate: add role to users
     try:
         await client.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+    except Exception:
+        pass
+
+    # Migrate: add user_id to tokens
+    try:
+        await client.execute("ALTER TABLE tokens ADD COLUMN user_id INTEGER REFERENCES users(id)")
     except Exception:
         pass
 
