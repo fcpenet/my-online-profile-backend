@@ -9,11 +9,27 @@ from tests.conftest import AUTH_HEADERS, mock_result
 USER_API_KEY_HEADERS = {"X-API-Key": "user-api-key"}
 
 
-def _mock_user_key_auth():
-    """Patches auth so USER_API_KEY_HEADERS triggers user DB lookup."""
-    async def _different_key():
-        return "settings-key-value"
-    return patch("app.auth.get_api_key", side_effect=_different_key)
+class _mock_user_key_auth:
+    """Context manager: temporarily overrides get_current_user to return a specific user."""
+    def __init__(self, user_id=1):
+        self.user_id = user_id
+
+    def __enter__(self):
+        from app import app
+        from tests.conftest import _orig_get_current_user
+        user_id = self.user_id
+        async def _user_getter(api_key=None):
+            return {"id": user_id, "organization_id": None, "role": "user"}
+        self._app = app
+        self._key = _orig_get_current_user
+        self._prev = app.dependency_overrides.get(_orig_get_current_user)
+        app.dependency_overrides[_orig_get_current_user] = _user_getter
+
+    def __exit__(self, *_):
+        if self._prev is None:
+            self._app.dependency_overrides.pop(self._key, None)
+        else:
+            self._app.dependency_overrides[self._key] = self._prev
 
 # columns: id, title, amount, tag, category, location, description,
 #          payor_id, participants, trip_id, created_at, updated_at, is_expected
@@ -148,10 +164,9 @@ class TestCreateExpense:
         c, mock_db = client
         # user_id=3, trip participants=[1, 2] — user not a member
         mock_db.execute.side_effect = [
-            mock_result(rows=[(3, None, "user")]),   # auth: user lookup
-            mock_result(rows=[('[1, 2]',)]),         # _get_trip_participants
+            mock_result(rows=[('[1, 2]',)]),  # _get_trip_participants
         ]
-        with _mock_user_key_auth():
+        with _mock_user_key_auth(user_id=3):
             resp = c.post(
                 "/api/expenses/",
                 json={"title": "Dinner", "amount": 10.0, "trip_id": 2},
@@ -166,11 +181,10 @@ class TestCreateExpense:
                "2024-01-01", "2024-01-01", 0)
         # user_id=1, trip participants=[1, 2] — user is a member
         mock_db.execute.side_effect = [
-            mock_result(rows=[(1, None, "user")]),   # auth: user lookup
-            mock_result(rows=[('[1, 2]',)]),         # _get_trip_participants
-            mock_result(rows=[row]),                 # INSERT result
+            mock_result(rows=[('[1, 2]',)]),  # _get_trip_participants
+            mock_result(rows=[row]),          # INSERT result
         ]
-        with _mock_user_key_auth():
+        with _mock_user_key_auth(user_id=1):
             resp = c.post(
                 "/api/expenses/",
                 json={"title": "Coffee", "amount": 5.0, "trip_id": 2},

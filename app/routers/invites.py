@@ -3,7 +3,7 @@ import secrets
 import libsql_client
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import require_settings_key
+from app.auth import require_admin
 from app.database import get_client
 from app.models import InviteCreate, InviteResponse
 
@@ -21,7 +21,7 @@ def _row_to_invite(row) -> InviteResponse:
     )
 
 
-@router.post("/", status_code=201, dependencies=[Depends(require_settings_key)])
+@router.post("/", status_code=201, dependencies=[Depends(require_admin)])
 async def create_invite(body: InviteCreate) -> InviteResponse:
     code = body.code or secrets.token_urlsafe(8)
     client = get_client()
@@ -37,14 +37,14 @@ async def create_invite(body: InviteCreate) -> InviteResponse:
     return _row_to_invite(rs.rows[0])
 
 
-@router.get("/", dependencies=[Depends(require_settings_key)])
+@router.get("/", dependencies=[Depends(require_admin)])
 async def list_invites() -> list[InviteResponse]:
     client = get_client()
     rs = await client.execute("SELECT * FROM invites ORDER BY created_at DESC")
     return [_row_to_invite(row) for row in rs.rows]
 
 
-@router.delete("/{invite_id}", dependencies=[Depends(require_settings_key)])
+@router.delete("/{invite_id}", dependencies=[Depends(require_admin)])
 async def delete_invite(invite_id: int):
     client = get_client()
     rs = await client.execute(

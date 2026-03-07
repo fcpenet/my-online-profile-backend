@@ -66,91 +66,30 @@ class TestInitDb:
     async def test_creates_tables(self):
         import app.database as db
         mock_client = AsyncMock()
-        # init_db also checks for api_key — return no rows so it generates one
-        no_rows = MagicMock()
-        no_rows.rows = []
-        mock_client.execute.return_value = no_rows
+        mock_client.execute.return_value = MagicMock()
         db._client = None
         with patch("app.database.get_client", return_value=mock_client):
             await db.init_db()
         mock_client.batch.assert_called_once()
         statements = mock_client.batch.call_args[0][0]
-        assert len(statements) == 15
-        # Verify all fifteen tables
+        assert len(statements) == 14
         all_sql = " ".join(statements)
         assert "todos" in all_sql
         assert "documents" in all_sql
         assert "embeddings" in all_sql
-        assert "settings" in all_sql
         assert "invites" in all_sql
         assert "tags" in all_sql
         assert "payments" in all_sql
         assert "tokens" in all_sql
-        # Settings table should have created_at and expires_at columns
-        settings_sql = [s for s in statements if "settings" in s][0]
-        assert "created_at" in settings_sql
-        assert "expires_at" in settings_sql
+        assert "settings" not in all_sql
 
     @pytest.mark.asyncio
-    async def test_generates_key_when_none_exists(self):
+    async def test_runs_all_migrations(self):
         import app.database as db
         mock_client = AsyncMock()
-        # SELECT for api_key returns no rows
-        no_rows = MagicMock()
-        no_rows.rows = []
-        mock_client.execute.return_value = no_rows
+        mock_client.execute.return_value = MagicMock()
         db._client = None
         with patch("app.database.get_client", return_value=mock_client):
             await db.init_db()
-        # 14 ALTER TABLE (migration) + SELECT check + INSERT OR REPLACE = 16
-        assert mock_client.execute.call_count == 16
-        insert_stmt = mock_client.execute.call_args_list[15][0][0]
-        assert "INSERT OR REPLACE INTO settings" in insert_stmt.sql
-        assert "expires_at" in insert_stmt.sql
-        # Generated key should be a non-empty string
-        assert len(insert_stmt.args[0]) > 0
-
-    @pytest.mark.asyncio
-    async def test_generates_key_when_expired(self):
-        import app.database as db
-        mock_client = AsyncMock()
-        # SELECT returns a key with an expired timestamp
-        expired = MagicMock()
-        expired.rows = [("old-key", "2020-01-01 00:00:00")]
-        # datetime('now') returns current time (after the expiry)
-        now_result = MagicMock()
-        now_result.rows = [("2025-01-01 00:00:00",)]
-        # 14 ALTER TABLE + SELECT key + SELECT now + INSERT = 17 calls
-        alter_ok = MagicMock()
-        mock_client.execute.side_effect = [
-            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
-            expired, now_result, MagicMock()
-        ]
-        db._client = None
-        with patch("app.database.get_client", return_value=mock_client):
-            await db.init_db()
-        assert mock_client.execute.call_count == 17
-        insert_stmt = mock_client.execute.call_args_list[16][0][0]
-        assert "INSERT OR REPLACE INTO settings" in insert_stmt.sql
-
-    @pytest.mark.asyncio
-    async def test_skips_generation_when_key_valid(self):
-        import app.database as db
-        mock_client = AsyncMock()
-        # SELECT returns a key with a future expiry
-        valid = MagicMock()
-        valid.rows = [("existing-key", "2099-01-01 00:00:00")]
-        # datetime('now') returns current time (before expiry)
-        now_result = MagicMock()
-        now_result.rows = [("2025-01-01 00:00:00",)]
-        # 14 ALTER TABLE + SELECT key + SELECT now = 16 calls
-        alter_ok = MagicMock()
-        mock_client.execute.side_effect = [
-            alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok, alter_ok,
-            valid, now_result
-        ]
-        db._client = None
-        with patch("app.database.get_client", return_value=mock_client):
-            await db.init_db()
-        # No INSERT — just the 16 calls
-        assert mock_client.execute.call_count == 16
+        # 12 ALTER TABLE migrations (no settings migrations, no api_key generation)
+        assert mock_client.execute.call_count == 12

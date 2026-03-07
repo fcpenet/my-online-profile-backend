@@ -6,69 +6,6 @@ from fastapi import HTTPException
 from tests.conftest import AUTH_HEADERS, mock_result
 
 
-# --- Unit tests for get_api_key (expiry logic) ---
-
-class TestGetApiKey:
-    @pytest.mark.asyncio
-    async def test_returns_key_when_valid(self):
-        import app.auth as auth
-        auth._cached_key = None
-        auth._cache_time = 0
-        mock_client = AsyncMock()
-        mock_client.execute.return_value = mock_result(rows=[("valid-key",)])
-        with patch("app.auth.get_client", return_value=mock_client):
-            result = await auth.get_api_key()
-        assert result == "valid-key"
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_expired(self):
-        import app.auth as auth
-        auth._cached_key = None
-        auth._cache_time = 0
-        mock_client = AsyncMock()
-        # expires_at > datetime('now') is false → no rows returned
-        mock_client.execute.return_value = mock_result(rows=[])
-        with patch("app.auth.get_client", return_value=mock_client):
-            result = await auth.get_api_key()
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_no_key_exists(self):
-        import app.auth as auth
-        auth._cached_key = None
-        auth._cache_time = 0
-        mock_client = AsyncMock()
-        mock_client.execute.return_value = mock_result(rows=[])
-        with patch("app.auth.get_client", return_value=mock_client):
-            result = await auth.get_api_key()
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_uses_cache_within_ttl(self):
-        import time
-        import app.auth as auth
-        auth._cached_key = "cached-key"
-        auth._cache_time = time.time()  # just now
-        mock_client = AsyncMock()
-        with patch("app.auth.get_client", return_value=mock_client):
-            result = await auth.get_api_key()
-        assert result == "cached-key"
-        # Should NOT have queried the DB
-        mock_client.execute.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_queries_db_when_cache_expired(self):
-        import app.auth as auth
-        auth._cached_key = "stale-key"
-        auth._cache_time = 0  # long ago
-        mock_client = AsyncMock()
-        mock_client.execute.return_value = mock_result(rows=[("fresh-key",)])
-        with patch("app.auth.get_client", return_value=mock_client):
-            result = await auth.get_api_key()
-        assert result == "fresh-key"
-        mock_client.execute.assert_called_once()
-
-
 # --- Unit tests for require_api_key ---
 
 class TestRequireApiKey:
@@ -91,52 +28,28 @@ class TestRequireApiKey:
         from app.auth import require_api_key
         mock_client = AsyncMock()
         mock_client.execute.return_value = mock_result(rows=[])
-        with patch("app.auth.get_api_key", return_value="correct-key"), \
-             patch("app.auth.get_client", return_value=mock_client):
+        with patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_api_key(api_key="wrong-key")
         assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_no_stored_key_raises_403(self):
+    async def test_invalid_token_raises_403(self):
         from app.auth import require_api_key
         mock_client = AsyncMock()
         mock_client.execute.return_value = mock_result(rows=[])
-        with patch("app.auth.get_api_key", return_value=None), \
-             patch("app.auth.get_client", return_value=mock_client):
+        with patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_api_key(api_key="any-key")
         assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_non_empty_key_calls_get_api_key(self):
+    async def test_valid_token_passes(self):
         from app.auth import require_api_key
         mock_client = AsyncMock()
-        mock_client.execute.return_value = mock_result(rows=[])
-        with patch("app.auth.get_api_key", return_value="stored-key") as mock_get, \
-             patch("app.auth.get_client", return_value=mock_client):
-            with pytest.raises(HTTPException) as exc_info:
-                await require_api_key(api_key="some-non-empty-key")
-            mock_get.assert_called_once()
-        assert exc_info.value.status_code == 403
-
-    @pytest.mark.asyncio
-    async def test_user_api_key_passes(self):
-        from app.auth import require_api_key
-        mock_client = AsyncMock()
-        # Settings key doesn't match, but user key found (id, organization_id, role)
         mock_client.execute.return_value = mock_result(rows=[(1, None, "user")])
-        with patch("app.auth.get_api_key", return_value="settings-key"), \
-             patch("app.auth.get_client", return_value=mock_client):
-            result = await require_api_key(api_key="user-key")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_matching_key_passes(self):
-        from app.auth import require_api_key
-        with patch("app.auth.get_api_key", return_value="my-secret"):
-            # Should not raise
-            result = await require_api_key(api_key="my-secret")
+        with patch("app.auth.get_client", return_value=mock_client):
+            result = await require_api_key(api_key="user-token")
         assert result is None
 
 
@@ -151,20 +64,12 @@ class TestRequireAdmin:
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_settings_key_passes(self):
-        from app.auth import require_admin
-        with patch("app.auth.get_api_key", return_value="settings-key"):
-            result = await require_admin(api_key="settings-key")
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_valid_admin_token_passes(self):
         from app.auth import require_admin
         mock_client = AsyncMock()
         # JOIN returns: max_uses=10, uses=1, expires_at=None, role="admin"
         mock_client.execute.return_value = mock_result(rows=[(10, 1, None, "admin")])
-        with patch("app.auth.get_api_key", return_value="settings-key"), \
-             patch("app.auth.get_client", return_value=mock_client):
+        with patch("app.auth.get_client", return_value=mock_client):
             result = await require_admin(api_key="some-token-value")
         assert result is None
 
@@ -173,8 +78,7 @@ class TestRequireAdmin:
         from app.auth import require_admin
         mock_client = AsyncMock()
         mock_client.execute.return_value = mock_result(rows=[(10, 1, None, "user")])
-        with patch("app.auth.get_api_key", return_value="settings-key"), \
-             patch("app.auth.get_client", return_value=mock_client):
+        with patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_admin(api_key="some-token-value")
         assert exc_info.value.status_code == 403
@@ -184,10 +88,8 @@ class TestRequireAdmin:
     async def test_token_no_user_raises_403(self):
         from app.auth import require_admin
         mock_client = AsyncMock()
-        # Token exists but no user_id (LEFT JOIN → role is None)
         mock_client.execute.return_value = mock_result(rows=[(10, 1, None, None)])
-        with patch("app.auth.get_api_key", return_value="settings-key"), \
-             patch("app.auth.get_client", return_value=mock_client):
+        with patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_admin(api_key="some-token-value")
         assert exc_info.value.status_code == 403
@@ -197,8 +99,7 @@ class TestRequireAdmin:
         from app.auth import require_admin
         mock_client = AsyncMock()
         mock_client.execute.return_value = mock_result(rows=[])
-        with patch("app.auth.get_api_key", return_value="settings-key"), \
-             patch("app.auth.get_client", return_value=mock_client):
+        with patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_admin(api_key="bad-token")
         assert exc_info.value.status_code == 403
@@ -211,11 +112,10 @@ class TestRequireAdmin:
         now_result = MagicMock()
         now_result.rows = [("2025-01-01 12:00:00",)]
         mock_client.execute.side_effect = [
-            mock_result(rows=[(10, 1, "2020-01-01 00:00:00", "admin")]),  # JOIN
-            now_result,                                                     # datetime('now')
+            mock_result(rows=[(10, 1, "2020-01-01 00:00:00", "admin")]),
+            now_result,
         ]
-        with patch("app.auth.get_api_key", return_value="settings-key"), \
-             patch("app.auth.get_client", return_value=mock_client):
+        with patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_admin(api_key="some-token-value")
         assert exc_info.value.status_code == 403
@@ -225,10 +125,8 @@ class TestRequireAdmin:
     async def test_exhausted_token_raises_403(self):
         from app.auth import require_admin
         mock_client = AsyncMock()
-        # max_uses=5, uses=5 — exhausted, no expires_at
         mock_client.execute.return_value = mock_result(rows=[(5, 5, None, "admin")])
-        with patch("app.auth.get_api_key", return_value="settings-key"), \
-             patch("app.auth.get_client", return_value=mock_client):
+        with patch("app.auth.get_client", return_value=mock_client):
             with pytest.raises(HTTPException) as exc_info:
                 await require_admin(api_key="some-token-value")
         assert exc_info.value.status_code == 403

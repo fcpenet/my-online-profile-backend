@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import secrets
 
 import libsql_client
 
@@ -155,14 +154,6 @@ async def init_db():
             )
             """,
             """
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                expires_at TEXT
-            )
-            """,
-            """
             CREATE TABLE IF NOT EXISTS invites (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 code TEXT NOT NULL UNIQUE,
@@ -201,16 +192,6 @@ async def init_db():
             """,
         ]
     )
-    # Migrate: add columns if the settings table predates the schema change
-    for col, defn in [
-        ("created_at", "TEXT NOT NULL DEFAULT (datetime('now'))"),
-        ("expires_at", "TEXT"),
-    ]:
-        try:
-            await client.execute(f"ALTER TABLE settings ADD COLUMN {col} {defn}")
-        except Exception:
-            pass  # Column already exists
-
     # Migrate: add organization_id to users
     for col, defn in [
         ("organization_id", "INTEGER REFERENCES organizations(id)"),
@@ -282,26 +263,3 @@ async def init_db():
     except Exception:
         pass
 
-    # Ensure a valid (non-expired) API key exists — generate one if missing or expired
-    rs = await client.execute(
-        libsql_client.Statement(
-            "SELECT value, expires_at FROM settings WHERE key = ?", ["api_key"]
-        )
-    )
-    needs_new_key = True
-    if rs.rows:
-        expires_at = rs.rows[0][1]
-        # Valid if expires_at is in the future (compared as ISO 8601 strings)
-        if expires_at:
-            now = await client.execute("SELECT datetime('now')")
-            needs_new_key = now.rows[0][0] >= expires_at
-    if needs_new_key:
-        new_key = secrets.token_urlsafe(32)
-        await client.execute(
-            libsql_client.Statement(
-                """INSERT OR REPLACE INTO settings (key, value, created_at, expires_at)
-                   VALUES ('api_key', ?, datetime('now'), datetime('now', '+24 hours'))""",
-                [new_key],
-            )
-        )
-        logger.info("New API key created in the database")

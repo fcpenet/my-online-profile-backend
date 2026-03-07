@@ -14,11 +14,27 @@ TRIP_ROW = (1, "Europe 2024", "Summer trip", "2024-06-01", "2024-06-15",
 USER_API_KEY_HEADERS = {"X-API-Key": "user-api-key"}
 
 
-def _mock_user_key_auth():
-    """Patches auth so USER_API_KEY_HEADERS triggers user DB lookup."""
-    async def _different_key():
-        return "settings-key-value"
-    return patch("app.auth.get_api_key", side_effect=_different_key)
+class _mock_user_key_auth:
+    """Context manager: temporarily overrides get_current_user to return a specific user."""
+    def __init__(self, user_id=3):
+        self.user_id = user_id
+
+    def __enter__(self):
+        from app import app
+        from tests.conftest import _orig_get_current_user
+        user_id = self.user_id
+        async def _user_getter(api_key=None):
+            return {"id": user_id, "organization_id": None, "role": "user"}
+        self._app = app
+        self._key = _orig_get_current_user
+        self._prev = app.dependency_overrides.get(_orig_get_current_user)
+        app.dependency_overrides[_orig_get_current_user] = _user_getter
+
+    def __exit__(self, *_):
+        if self._prev is None:
+            self._app.dependency_overrides.pop(self._key, None)
+        else:
+            self._app.dependency_overrides[self._key] = self._prev
 
 
 class TestCreateTrip:
@@ -236,11 +252,10 @@ class TestJoinTrip:
         updated = (1, "Europe 2024", "Summer trip", "2024-06-01", "2024-06-15",
                    '[1, 2, 3]', "2024-01-01", "2024-01-02", "abc123")
         mock_db.execute.side_effect = [
-            mock_result(rows=[(3, None, "user")]),        # auth: user lookup (id=3)
             mock_result(rows=[('[1, 2]', 'abc123')]),  # SELECT participants, invite_code
             mock_result(rows=[updated]),               # UPDATE RETURNING *
         ]
-        with _mock_user_key_auth():
+        with _mock_user_key_auth(user_id=3):
             resp = c.post(
                 "/api/trips/1/join",
                 json={"invite_code": "abc123"},
@@ -253,11 +268,10 @@ class TestJoinTrip:
     def test_join_already_member_is_idempotent(self, client):
         c, mock_db = client
         mock_db.execute.side_effect = [
-            mock_result(rows=[(1, None, "user")]),        # auth: user lookup (id=1)
             mock_result(rows=[('[1, 2]', 'abc123')]),  # SELECT participants, invite_code
             mock_result(rows=[TRIP_ROW]),              # SELECT * (already member)
         ]
-        with _mock_user_key_auth():
+        with _mock_user_key_auth(user_id=1):
             resp = c.post(
                 "/api/trips/1/join",
                 json={"invite_code": "abc123"},
@@ -269,10 +283,9 @@ class TestJoinTrip:
     def test_join_wrong_invite_code_returns_403(self, client):
         c, mock_db = client
         mock_db.execute.side_effect = [
-            mock_result(rows=[(3, None, "user")]),         # auth: user lookup
-            mock_result(rows=[('[1, 2]', 'real-code')]), # SELECT participants, invite_code
+            mock_result(rows=[('[1, 2]', 'real-code')]),  # SELECT participants, invite_code
         ]
-        with _mock_user_key_auth():
+        with _mock_user_key_auth(user_id=3):
             resp = c.post(
                 "/api/trips/1/join",
                 json={"invite_code": "wrong-code"},
@@ -284,10 +297,9 @@ class TestJoinTrip:
     def test_join_nonexistent_trip_returns_404(self, client):
         c, mock_db = client
         mock_db.execute.side_effect = [
-            mock_result(rows=[(3, None, "user")]),  # auth: user lookup
-            mock_result(rows=[]),                   # SELECT: trip not found
+            mock_result(rows=[]),  # SELECT: trip not found
         ]
-        with _mock_user_key_auth():
+        with _mock_user_key_auth(user_id=3):
             resp = c.post(
                 "/api/trips/999/join",
                 json={"invite_code": "abc123"},

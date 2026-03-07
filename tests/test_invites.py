@@ -1,7 +1,5 @@
 """Tests for Invite management endpoints (app/routers/invites.py)."""
 
-from unittest.mock import patch, AsyncMock
-
 import libsql_client
 
 from tests.conftest import AUTH_HEADERS, mock_result
@@ -9,16 +7,7 @@ from tests.conftest import AUTH_HEADERS, mock_result
 # columns: id, code, max_uses, uses, created_at
 INVITE_ROW = (1, "abc123", 5, 0, "2024-01-01")
 
-# A user API key (not the settings key) — used to test that user keys are rejected
-USER_API_KEY_HEADERS = {"X-API-Key": "user-api-key"}
-
-
-def _mock_user_key_auth():
-    """Patches auth so that USER_API_KEY_HEADERS resolves to a real user (not settings key)."""
-    async def _get_api_key_returns_different():
-        return "settings-key-value"  # different from "user-api-key"
-
-    return patch("app.auth.get_api_key", side_effect=_get_api_key_returns_different)
+NON_ADMIN_HEADERS = {"X-API-Key": "non-admin-token"}
 
 
 class TestCreateInvite:
@@ -66,18 +55,10 @@ class TestCreateInvite:
         resp = c.post("/api/invites/", json={"max_uses": 1})
         assert resp.status_code == 401
 
-    def test_create_with_user_key_returns_403(self, client):
-        c, mock_db = client
-        # User key lookup: return a real user row so get_current_user returns a user dict
-        mock_db.execute.return_value = mock_result(rows=[(1, None, "user")])
-        with _mock_user_key_auth():
-            resp = c.post(
-                "/api/invites/",
-                json={"max_uses": 1},
-                headers=USER_API_KEY_HEADERS,
-            )
+    def test_create_with_non_admin_key_returns_403(self, client):
+        c, _ = client
+        resp = c.post("/api/invites/", json={"max_uses": 1}, headers=NON_ADMIN_HEADERS)
         assert resp.status_code == 403
-        assert "Settings key required" in resp.json()["detail"]
 
     def test_create_calls_db_with_correct_sql(self, client):
         c, mock_db = client

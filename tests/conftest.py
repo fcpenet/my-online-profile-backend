@@ -2,6 +2,8 @@ import os
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
+from fastapi import HTTPException, Security
+from fastapi.security import APIKeyHeader
 from fastapi.testclient import TestClient
 
 # Set env vars before importing the app
@@ -9,8 +11,16 @@ os.environ.setdefault("TURSO_DATABASE_URL", "https://fake-db.turso.io")
 os.environ.setdefault("TURSO_AUTH_TOKEN", "fake-token")
 os.environ.setdefault("OPENAI_API_KEY", "sk-fake-key")
 
+# Capture original auth functions before any patches are applied so we can
+# use them as stable keys in app.dependency_overrides.
+from app.auth import get_current_user as _orig_get_current_user  # noqa: E402
+from app.auth import require_admin as _orig_require_admin          # noqa: E402
+from app.auth import require_api_key as _orig_require_api_key      # noqa: E402
+
 TEST_API_KEY = "test-secret-key"
 AUTH_HEADERS = {"X-API-Key": TEST_API_KEY}
+
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def mock_result(rows=None):
@@ -20,8 +30,30 @@ def mock_result(rows=None):
     return result
 
 
-async def _mock_get_api_key():
-    return TEST_API_KEY
+async def _mock_get_current_user(api_key: str = Security(_api_key_header)):
+    """Mock for get_current_user: TEST_API_KEY returns None (superuser),
+    missing key raises 401, any other key raises 403."""
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API key")
+    if api_key == TEST_API_KEY:
+        return None
+    raise HTTPException(status_code=403, detail="Invalid API key")
+
+
+async def _mock_require_api_key(api_key: str = Security(_api_key_header)):
+    """Mock for require_api_key: TEST_API_KEY passes, missing raises 401, other raises 403."""
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API key")
+    if api_key != TEST_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid API key")
+
+
+async def _mock_require_admin(api_key: str = Security(_api_key_header)):
+    """Mock for require_admin: TEST_API_KEY passes, missing raises 401, other raises 403."""
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API key")
+    if api_key != TEST_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid token")
 
 
 @pytest.fixture
@@ -33,7 +65,6 @@ def client():
 
     with patch("app.routers.todos.get_client", return_value=mock_db), \
          patch("app.routers.rag.get_client", return_value=mock_db), \
-         patch("app.routers.settings.get_client", return_value=mock_db), \
          patch("app.routers.expenses.get_client", return_value=mock_db), \
          patch("app.routers.trips.get_client", return_value=mock_db), \
          patch("app.routers.projects.get_client", return_value=mock_db), \
@@ -44,8 +75,15 @@ def client():
          patch("app.routers.payments.get_client", return_value=mock_db), \
          patch("app.routers.tokens.get_client", return_value=mock_db), \
          patch("app.auth.get_client", return_value=mock_db), \
-         patch("app.auth.get_api_key", side_effect=_mock_get_api_key), \
          patch("app.init_db", new_callable=AsyncMock):
         from app import app
-        with TestClient(app) as c:
-            yield c, mock_db
+
+        app.dependency_overrides[_orig_get_current_user] = _mock_get_current_user
+        app.dependency_overrides[_orig_require_api_key] = _mock_require_api_key
+        app.dependency_overrides[_orig_require_admin] = _mock_require_admin
+
+        try:
+            with TestClient(app) as c:
+                yield c, mock_db
+        finally:
+            app.dependency_overrides.clear()
