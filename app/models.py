@@ -90,7 +90,7 @@ class JoinTripRequest(BaseModel):
 class ExpenseCreate(BaseModel):
     title: str
     amount: float
-    tag: str | None = None
+    tag_ids: list[int] | None = None
     category: str | None = None
     location: str | None = None
     description: str | None = None
@@ -103,7 +103,7 @@ class ExpenseCreate(BaseModel):
 class ExpenseUpdate(BaseModel):
     title: str | None = None
     amount: float | None = None
-    tag: str | None = None
+    tag_ids: list[int] | None = None
     category: str | None = None
     location: str | None = None
     description: str | None = None
@@ -117,7 +117,7 @@ class ExpenseResponse(BaseModel):
     id: int
     title: str
     amount: float
-    tag: str | None
+    tag_ids: list[int] | None
     category: str | None
     location: str | None
     description: str | None
@@ -266,6 +266,29 @@ class PaymentResponse(BaseModel):
     tag_ids: list[int] | None
     created_at: str
     updated_at: str
+
+
+# --- Tokens ---
+
+
+class TokenCreate(BaseModel):
+    max_uses: int = 1
+    expires_at: str | None = None
+
+
+class TokenResponse(BaseModel):
+    id: int
+    token: str
+    max_uses: int
+    uses: int
+    expires_at: str | None
+    created_at: str
+
+
+class TokenValidateResponse(BaseModel):
+    valid: bool
+    uses_remaining: int | None
+    expires_at: str | None
 
 
 # --- Invites ---

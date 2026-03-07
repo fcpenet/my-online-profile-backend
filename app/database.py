@@ -83,7 +83,7 @@ async def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 amount REAL NOT NULL,
-                tag TEXT,
+                tags TEXT,
                 category TEXT,
                 location TEXT,
                 description TEXT,
@@ -187,6 +187,16 @@ async def init_db():
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token TEXT NOT NULL UNIQUE,
+                max_uses INTEGER NOT NULL DEFAULT 1,
+                uses INTEGER NOT NULL DEFAULT 0,
+                expires_at TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
         ]
     )
     # Migrate: add columns if the settings table predates the schema change
@@ -249,6 +259,12 @@ async def init_db():
     # Migrate: add is_expected to expenses
     try:
         await client.execute("ALTER TABLE expenses ADD COLUMN is_expected INTEGER NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
+    # Migrate: rename tag to tags in expenses
+    try:
+        await client.execute("ALTER TABLE expenses RENAME COLUMN tag TO tags")
     except Exception:
         pass
 

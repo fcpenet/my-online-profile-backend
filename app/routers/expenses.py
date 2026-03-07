@@ -11,14 +11,14 @@ router = APIRouter()
 
 
 def _row_to_expense(row) -> ExpenseResponse:
-    # columns: id, title, amount, tag, category, location, description,
+    # columns: id, title, amount, tags, category, location, description,
     #          payor_id, participants, trip_id, created_at, updated_at, is_expected
     participants = json.loads(row[8]) if row[8] else None
     return ExpenseResponse(
         id=row[0],
         title=row[1],
         amount=row[2],
-        tag=row[3],
+        tag_ids=json.loads(row[3]) if row[3] else None,
         category=row[4],
         location=row[5],
         description=row[6],
@@ -70,6 +70,21 @@ async def _validate_participants_in_trip(participants: list[int], trip_id: int |
         )
 
 
+async def _validate_tag_ids(tag_ids: list[int]):
+    client = get_client()
+    placeholders = ", ".join("?" * len(tag_ids))
+    rs = await client.execute(
+        libsql_client.Statement(
+            f"SELECT id FROM tags WHERE id IN ({placeholders})",
+            tag_ids,
+        )
+    )
+    found = {row[0] for row in rs.rows}
+    invalid = [t for t in tag_ids if t not in found]
+    if invalid:
+        raise HTTPException(status_code=404, detail=f"Tags not found: {invalid}")
+
+
 async def _get_trip_participants(trip_id: int) -> list[int]:
     """Fetches the trip's participants list. Raises 404 if trip not found."""
     client = get_client()
@@ -86,6 +101,9 @@ async def create_expense(
     body: ExpenseCreate,
     user: dict | None = Depends(get_current_user),
 ) -> ExpenseResponse:
+    if body.tag_ids:
+        await _validate_tag_ids(body.tag_ids)
+
     if body.payor_id is not None:
         await _validate_payor(body.payor_id)
 
@@ -106,13 +124,14 @@ async def create_expense(
                 status_code=404, detail=f"Participants not in trip: {invalid}"
             )
 
+    tags_json = json.dumps(body.tag_ids) if body.tag_ids else None
     participants_json = json.dumps(body.participants) if body.participants else None
     client = get_client()
     rs = await client.execute(
         libsql_client.Statement(
-            "INSERT INTO expenses (title, amount, tag, category, location, description, "
+            "INSERT INTO expenses (title, amount, tags, category, location, description, "
             "payor_id, participants, trip_id, is_expected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
-            [body.title, body.amount, body.tag, body.category, body.location,
+            [body.title, body.amount, tags_json, body.category, body.location,
              body.description, body.payor_id, participants_json, body.trip_id,
              int(body.is_expected)],
         )
@@ -143,6 +162,10 @@ async def update_expense(expense_id: int, body: ExpenseUpdate) -> ExpenseRespons
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    if "tag_ids" in updates:
+        await _validate_tag_ids(updates["tag_ids"])
+        updates["tags"] = json.dumps(updates.pop("tag_ids"))
 
     if "payor_id" in updates:
         await _validate_payor(updates["payor_id"])

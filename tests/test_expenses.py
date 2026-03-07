@@ -17,7 +17,7 @@ def _mock_user_key_auth():
 
 # columns: id, title, amount, tag, category, location, description,
 #          payor_id, participants, trip_id, created_at, updated_at, is_expected
-SAMPLE_ROW = (1, "Dinner", 45.99, "meal", "Food", "Restaurant", "Team dinner",
+SAMPLE_ROW = (1, "Dinner", 45.99, '[3]', "Food", "Restaurant", "Team dinner",
               1, '[1, 2]', 2, "2024-01-01", "2024-01-01", 0)
 
 
@@ -26,6 +26,7 @@ class TestCreateExpense:
         c, mock_db = client
         # payor check → trip participants check → INSERT
         mock_db.execute.side_effect = [
+            mock_result(rows=[(3,)]),          # tag validation
             mock_result(rows=[(1,)]),          # payor exists
             mock_result(rows=[('[1, 2]',)]),   # trip participants
             mock_result(rows=[SAMPLE_ROW]),    # INSERT result
@@ -35,7 +36,7 @@ class TestCreateExpense:
             json={
                 "title": "Dinner",
                 "amount": 45.99,
-                "tag": "meal",
+                "tag_ids": [3],
                 "category": "Food",
                 "location": "Restaurant",
                 "description": "Team dinner",
@@ -49,6 +50,7 @@ class TestCreateExpense:
         data = resp.json()
         assert data["title"] == "Dinner"
         assert data["amount"] == 45.99
+        assert data["tag_ids"] == [3]
         assert data["payor_id"] == 1
         assert data["participants"] == [1, 2]
         assert data["trip_id"] == 2
@@ -177,6 +179,17 @@ class TestCreateExpense:
         assert resp.status_code == 201
         assert resp.json()["trip_id"] == 2
 
+    def test_create_invalid_tag_returns_404(self, client):
+        c, mock_db = client
+        mock_db.execute.return_value = mock_result(rows=[])  # tag not found
+        resp = c.post(
+            "/api/expenses/",
+            json={"title": "Dinner", "amount": 45.99, "tag_ids": [999]},
+            headers=AUTH_HEADERS,
+        )
+        assert resp.status_code == 404
+        assert "Tags not found" in resp.json()["detail"]
+
     def test_create_calls_db_with_correct_sql(self, client):
         c, mock_db = client
         mock_db.execute.return_value = mock_result(rows=[SAMPLE_ROW])
@@ -241,7 +254,7 @@ class TestGetExpense:
 class TestUpdateExpense:
     def test_update_amount(self, client):
         c, mock_db = client
-        updated_row = (1, "Dinner", 50.0, "meal", "Food", "Restaurant",
+        updated_row = (1, "Dinner", 50.0, '[3]', "Food", "Restaurant",
                        "Team dinner", 1, '[1, 2]', 2,
                        "2024-01-01", "2024-01-02", 0)
         mock_db.execute.return_value = mock_result(rows=[updated_row])
@@ -251,7 +264,7 @@ class TestUpdateExpense:
 
     def test_update_participants(self, client):
         c, mock_db = client
-        updated_row = (1, "Dinner", 45.99, "meal", "Food", "Restaurant",
+        updated_row = (1, "Dinner", 45.99, '[3]', "Food", "Restaurant",
                        "Team dinner", 1, '[1, 2, 3]', 2,
                        "2024-01-01", "2024-01-02", 0)
         mock_db.execute.side_effect = [
