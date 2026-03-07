@@ -140,6 +140,101 @@ class TestRequireApiKey:
         assert result is None
 
 
+# --- Unit tests for require_admin ---
+
+class TestRequireAdmin:
+    @pytest.mark.asyncio
+    async def test_missing_key_raises_401(self):
+        from app.auth import require_admin
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(api_key=None)
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_settings_key_passes(self):
+        from app.auth import require_admin
+        with patch("app.auth.get_api_key", return_value="settings-key"):
+            result = await require_admin(api_key="settings-key")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_valid_admin_token_passes(self):
+        from app.auth import require_admin
+        mock_client = AsyncMock()
+        # JOIN returns: max_uses=10, uses=1, expires_at=None, role="admin"
+        mock_client.execute.return_value = mock_result(rows=[(10, 1, None, "admin")])
+        with patch("app.auth.get_api_key", return_value="settings-key"), \
+             patch("app.auth.get_client", return_value=mock_client):
+            result = await require_admin(api_key="some-token-value")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_non_admin_token_raises_403(self):
+        from app.auth import require_admin
+        mock_client = AsyncMock()
+        mock_client.execute.return_value = mock_result(rows=[(10, 1, None, "user")])
+        with patch("app.auth.get_api_key", return_value="settings-key"), \
+             patch("app.auth.get_client", return_value=mock_client):
+            with pytest.raises(HTTPException) as exc_info:
+                await require_admin(api_key="some-token-value")
+        assert exc_info.value.status_code == 403
+        assert "Admin role required" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_token_no_user_raises_403(self):
+        from app.auth import require_admin
+        mock_client = AsyncMock()
+        # Token exists but no user_id (LEFT JOIN → role is None)
+        mock_client.execute.return_value = mock_result(rows=[(10, 1, None, None)])
+        with patch("app.auth.get_api_key", return_value="settings-key"), \
+             patch("app.auth.get_client", return_value=mock_client):
+            with pytest.raises(HTTPException) as exc_info:
+                await require_admin(api_key="some-token-value")
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_invalid_token_raises_403(self):
+        from app.auth import require_admin
+        mock_client = AsyncMock()
+        mock_client.execute.return_value = mock_result(rows=[])
+        with patch("app.auth.get_api_key", return_value="settings-key"), \
+             patch("app.auth.get_client", return_value=mock_client):
+            with pytest.raises(HTTPException) as exc_info:
+                await require_admin(api_key="bad-token")
+        assert exc_info.value.status_code == 403
+        assert "Invalid token" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_expired_token_raises_403(self):
+        from app.auth import require_admin
+        mock_client = AsyncMock()
+        now_result = MagicMock()
+        now_result.rows = [("2025-01-01 12:00:00",)]
+        mock_client.execute.side_effect = [
+            mock_result(rows=[(10, 1, "2020-01-01 00:00:00", "admin")]),  # JOIN
+            now_result,                                                     # datetime('now')
+        ]
+        with patch("app.auth.get_api_key", return_value="settings-key"), \
+             patch("app.auth.get_client", return_value=mock_client):
+            with pytest.raises(HTTPException) as exc_info:
+                await require_admin(api_key="some-token-value")
+        assert exc_info.value.status_code == 403
+        assert "expired" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_exhausted_token_raises_403(self):
+        from app.auth import require_admin
+        mock_client = AsyncMock()
+        # max_uses=5, uses=5 — exhausted, no expires_at
+        mock_client.execute.return_value = mock_result(rows=[(5, 5, None, "admin")])
+        with patch("app.auth.get_api_key", return_value="settings-key"), \
+             patch("app.auth.get_client", return_value=mock_client):
+            with pytest.raises(HTTPException) as exc_info:
+                await require_admin(api_key="some-token-value")
+        assert exc_info.value.status_code == 403
+        assert "no uses remaining" in exc_info.value.detail
+
+
 # --- Public endpoints: should work without any API key ---
 
 class TestPublicEndpoints:

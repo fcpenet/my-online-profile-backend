@@ -72,9 +72,39 @@ async def require_api_key(api_key: str = Security(api_key_header)):
 
 
 async def require_admin(api_key: str = Security(api_key_header)):
-    """Accepts the settings key, or user keys where role = 'admin'."""
-    user = await get_current_user(api_key)
-    if user is not None and user.get("role") != "admin":
+    """Accepts the settings key, or a valid token linked to a user with role='admin'."""
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API key")
+
+    # Settings key bypasses token check
+    stored_key = await get_api_key()
+    if stored_key and api_key == stored_key:
+        return
+
+    # Validate token and check associated user's role via a single JOIN
+    client = get_client()
+    rs = await client.execute(
+        libsql_client.Statement(
+            "SELECT t.max_uses, t.uses, t.expires_at, u.role "
+            "FROM tokens t LEFT JOIN users u ON t.user_id = u.id "
+            "WHERE t.token = ?",
+            [api_key],
+        )
+    )
+    if not rs.rows:
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    max_uses, uses, expires_at, role = rs.rows[0]
+
+    if expires_at is not None:
+        now_rs = await client.execute("SELECT datetime('now')")
+        if now_rs.rows[0][0] >= expires_at:
+            raise HTTPException(status_code=403, detail="Token has expired")
+
+    if max_uses != 0 and uses >= max_uses:
+        raise HTTPException(status_code=403, detail="Token has no uses remaining")
+
+    if role != "admin":
         raise HTTPException(status_code=403, detail="Admin role required")
 
 
