@@ -91,5 +91,5 @@ class TestInitDb:
         db._client = None
         with patch("app.database.get_client", return_value=mock_client):
             await db.init_db()
-        # 12 ALTER TABLE migrations (no settings migrations, no api_key generation)
-        assert mock_client.execute.call_count == 12
+        # 14 ALTER TABLE migrations (12 ADD/RENAME + 2 DROP COLUMN for api_key cleanup)
+        assert mock_client.execute.call_count == 14

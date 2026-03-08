@@ -76,19 +76,10 @@ async def login(body: UserLogin) -> LoginResponse:
     if not _verify_password(body.password, password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Return an existing valid token if one exists
-    rs = await client.execute(
-        libsql_client.Statement(
-            "SELECT token, expires_at FROM tokens "
-            "WHERE user_id = ? "
-            "AND (expires_at IS NULL OR expires_at > datetime('now')) "
-            "AND (max_uses = 0 OR uses < max_uses) "
-            "ORDER BY created_at DESC LIMIT 1",
-            [user_id],
-        )
+    # Delete all existing tokens for this user (enforce one valid token at a time)
+    await client.execute(
+        libsql_client.Statement("DELETE FROM tokens WHERE user_id = ?", [user_id])
     )
-    if rs.rows:
-        return LoginResponse(api_key=rs.rows[0][0], expires_at=rs.rows[0][1])
 
     # Create a new token with unlimited uses and 1-day expiry
     new_key = secrets.token_urlsafe(32)

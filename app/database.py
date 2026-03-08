@@ -145,8 +145,6 @@ async def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
-                api_key TEXT,
-                api_key_expires_at TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now')),
                 organization_id INTEGER REFERENCES organizations(id),
@@ -262,4 +260,11 @@ async def init_db():
         await client.execute("ALTER TABLE tokens ADD COLUMN user_id INTEGER REFERENCES users(id)")
     except Exception:
         pass
+
+    # Migrate: drop legacy api_key columns from users
+    for col in ("api_key", "api_key_expires_at"):
+        try:
+            await client.execute(f"ALTER TABLE users DROP COLUMN {col}")
+        except Exception:
+            pass
 

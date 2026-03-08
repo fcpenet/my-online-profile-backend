@@ -87,7 +87,7 @@ class TestRegister:
 class TestLogin:
     def test_login_success_generates_new_token(self, client):
         c, mock_db = client
-        # SELECT user, no valid token found, INSERT new token
+        # SELECT user, DELETE existing tokens, INSERT new token
         mock_db.execute.side_effect = [
             mock_result(rows=[(1, "hashed")]),
             mock_result(rows=[]),
@@ -103,24 +103,9 @@ class TestLogin:
         assert "api_key" in data
         assert "expires_at" in data
 
-    def test_login_reuses_valid_token(self, client):
+    def test_login_always_creates_new_token(self, client):
         c, mock_db = client
-        # SELECT user, existing valid token found
-        mock_db.execute.side_effect = [
-            mock_result(rows=[(1, "hashed")]),
-            mock_result(rows=[("existing-token", "2099-01-01T00:00:00")]),
-        ]
-        with patch("app.routers.users._verify_password", return_value=True):
-            resp = c.post(
-                "/api/users/login",
-                json={"email": "test@example.com", "password": "mypassword"},
-            )
-        assert resp.status_code == 200
-        assert resp.json()["api_key"] == "existing-token"
-
-    def test_login_creates_new_token_when_none_valid(self, client):
-        c, mock_db = client
-        # No valid tokens (expired ones excluded by SQL), INSERT new token
+        # SELECT user, DELETE existing tokens, INSERT new token
         mock_db.execute.side_effect = [
             mock_result(rows=[(1, "hashed")]),
             mock_result(rows=[]),
@@ -133,6 +118,23 @@ class TestLogin:
             )
         assert resp.status_code == 200
         assert resp.json()["api_key"] == "fresh-token"
+
+    def test_login_deletes_old_tokens_before_creating(self, client):
+        c, mock_db = client
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1, "hashed")]),
+            mock_result(rows=[]),
+            mock_result(rows=[("brand-new-token", "2024-06-02T00:00:00")]),
+        ]
+        with patch("app.routers.users._verify_password", return_value=True):
+            c.post(
+                "/api/users/login",
+                json={"email": "test@example.com", "password": "mypassword"},
+            )
+        # Second call should be DELETE FROM tokens
+        delete_call = mock_db.execute.call_args_list[1][0][0]
+        assert isinstance(delete_call, libsql_client.Statement)
+        assert "DELETE FROM tokens" in delete_call.sql
 
     def test_login_wrong_password_returns_401(self, client):
         c, mock_db = client
