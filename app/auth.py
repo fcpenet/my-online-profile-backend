@@ -18,7 +18,7 @@ async def get_current_user(api_key: str = Security(api_key_header)) -> dict | No
     rs = await client.execute(
         libsql_client.Statement(
             "SELECT u.id, u.organization_id, u.role "
-            "FROM tokens t JOIN users u ON t.user_id = u.id "
+            "FROM tokens t LEFT JOIN users u ON t.user_id = u.id "
             "WHERE t.token = ? "
             "AND (t.expires_at IS NULL OR t.expires_at > datetime('now')) "
             "AND (t.max_uses = 0 OR t.uses < t.max_uses)",
@@ -26,7 +26,10 @@ async def get_current_user(api_key: str = Security(api_key_header)) -> dict | No
         )
     )
     if rs.rows:
-        return {"id": rs.rows[0][0], "organization_id": rs.rows[0][1], "role": rs.rows[0][2]}
+        row = rs.rows[0]
+        if row[0] is None:
+            return None  # Valid token with no associated user
+        return {"id": row[0], "organization_id": row[1], "role": row[2]}
     raise HTTPException(status_code=403, detail="Invalid API key")
 
 
