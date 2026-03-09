@@ -1,9 +1,9 @@
 import json
 
 import libsql_client
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Security
 
-from app.auth import require_api_key
+from app.auth import require_api_key, api_key_header
 from app.database import get_client
 from app.models import (
     DocumentIngestRequest,
@@ -62,7 +62,10 @@ async def ingest_document(body: DocumentIngestRequest) -> DocumentIngestResponse
 
 
 @router.post("/query")
-async def query_document(body: RAGQueryRequest) -> RAGQueryResponse:
+async def query_document(
+    body: RAGQueryRequest,
+    api_key: str = Security(api_key_header),
+) -> RAGQueryResponse:
     client = get_client()
 
     # Resolve document_id — use the most recent if not specified
@@ -104,6 +107,13 @@ async def query_document(body: RAGQueryRequest) -> RAGQueryResponse:
 
     # Generate answer
     answer = await generate_answer(body.question, relevant_chunks)
+
+    if api_key:
+        await client.execute(
+            libsql_client.Statement(
+                "UPDATE tokens SET uses = uses + 1 WHERE token = ?", [api_key]
+            )
+        )
 
     return RAGQueryResponse(answer=answer, sources=relevant_chunks)
 

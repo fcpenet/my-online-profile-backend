@@ -125,6 +125,23 @@ class TestQueryDocument:
         assert resp.status_code == 404
         assert "No embeddings" in resp.json()["detail"]
 
+    def test_query_with_token_increments_uses(self, client):
+        c, mock_db = client
+        mock_db.execute.side_effect = [
+            mock_result(rows=[(1,)]),  # most recent doc
+            mock_result(rows=[("chunk A", '[0.1, 0.2, 0.3]')]),  # embeddings
+            mock_result(rows=[]),  # UPDATE uses
+        ]
+        with patch("app.routers.rag.get_embeddings", new_callable=AsyncMock) as mock_emb, \
+             patch("app.routers.rag.generate_answer", new_callable=AsyncMock) as mock_gen:
+            mock_emb.return_value = [[0.1, 0.2, 0.3]]
+            mock_gen.return_value = "Answer"
+            resp = c.post("/api/rag/query", json={"question": "?"}, headers=AUTH_HEADERS)
+        assert resp.status_code == 200
+        update_call = mock_db.execute.call_args_list[2][0][0]
+        assert "UPDATE tokens" in update_call.sql
+        assert "uses = uses + 1" in update_call.sql
+
     def test_query_missing_question_returns_422(self, client):
         c, _ = client
         resp = c.post("/api/rag/query", json={})
