@@ -56,7 +56,8 @@ async def create_trip(body: TripCreate) -> TripResponse:
     rs = await client.execute(
         libsql_client.Statement(
             "INSERT INTO trips (title, description, start_date, end_date, participants, invite_code) "
-            "VALUES (?, ?, ?, ?, ?, ?) RETURNING *",
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "RETURNING id, title, description, start_date, end_date, participants, created_at, updated_at, invite_code",
             [body.title, body.description, body.start_date, body.end_date, participants_json, invite_code],
         )
     )
@@ -66,7 +67,7 @@ async def create_trip(body: TripCreate) -> TripResponse:
 @router.get("/", dependencies=[Depends(require_api_key)])
 async def list_trips() -> list[TripResponse]:
     client = get_client()
-    rs = await client.execute("SELECT * FROM trips ORDER BY created_at DESC")
+    rs = await client.execute("SELECT id, title, description, start_date, end_date, participants, created_at, updated_at, invite_code FROM trips ORDER BY created_at DESC")
     return [_row_to_trip(row) for row in rs.rows]
 
 
@@ -74,7 +75,10 @@ async def list_trips() -> list[TripResponse]:
 async def get_trip(trip_id: int) -> TripResponse:
     client = get_client()
     rs = await client.execute(
-        libsql_client.Statement("SELECT * FROM trips WHERE id = ?", [trip_id])
+        libsql_client.Statement(
+            "SELECT id, title, description, start_date, end_date, participants, created_at, updated_at, invite_code FROM trips WHERE id = ?",
+            [trip_id],
+        )
     )
     if not rs.rows:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -99,7 +103,7 @@ async def update_trip(trip_id: int, body: TripUpdate) -> TripResponse:
     rs = await client.execute(
         libsql_client.Statement(
             f"UPDATE trips SET {set_clause}, updated_at = datetime('now') "
-            f"WHERE id = ? RETURNING *",
+            f"WHERE id = ? RETURNING id, title, description, start_date, end_date, participants, created_at, updated_at, invite_code",
             values,
         )
     )
@@ -145,14 +149,17 @@ async def join_trip(
     if user["id"] in participants:
         # Already a member — fetch full trip and return (idempotent)
         rs = await client.execute(
-            libsql_client.Statement("SELECT * FROM trips WHERE id = ?", [trip_id])
+            libsql_client.Statement(
+                "SELECT id, title, description, start_date, end_date, participants, created_at, updated_at, invite_code FROM trips WHERE id = ?",
+                [trip_id],
+            )
         )
         return _row_to_trip(rs.rows[0])
 
     participants.append(user["id"])
     rs = await client.execute(
         libsql_client.Statement(
-            "UPDATE trips SET participants = ?, updated_at = datetime('now') WHERE id = ? RETURNING *",
+            "UPDATE trips SET participants = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, title, description, start_date, end_date, participants, created_at, updated_at, invite_code",
             [json.dumps(participants), trip_id],
         )
     )

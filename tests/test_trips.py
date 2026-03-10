@@ -119,8 +119,23 @@ class TestCreateTrip:
         assert isinstance(call_args, libsql_client.Statement)
         assert "INSERT INTO trips" in call_args.sql
 
+    def test_create_returning_uses_explicit_columns(self, client):
+        c, mock_db = client
+        mock_db.execute.return_value = mock_result(rows=[TRIP_ROW])
+        c.post("/api/trips/", json={"title": "Europe 2024"}, headers=AUTH_HEADERS)
+        sql = mock_db.execute.call_args[0][0].sql
+        assert "RETURNING *" not in sql
+        assert "RETURNING id, title" in sql
+
 
 class TestListTrips:
+    def test_list_uses_explicit_columns(self, client):
+        c, mock_db = client
+        c.get("/api/trips/", headers=AUTH_HEADERS)
+        sql = mock_db.execute.call_args[0][0]
+        assert "SELECT *" not in sql
+        assert "SELECT id, title" in sql
+
     def test_list_empty(self, client):
         c, _ = client
         resp = c.get("/api/trips/", headers=AUTH_HEADERS)
@@ -166,6 +181,14 @@ class TestGetTrip:
         c, _ = client
         resp = c.get("/api/trips/1")
         assert resp.status_code == 401
+
+    def test_get_uses_explicit_columns(self, client):
+        c, mock_db = client
+        mock_db.execute.return_value = mock_result(rows=[TRIP_ROW])
+        c.get("/api/trips/1", headers=AUTH_HEADERS)
+        sql = mock_db.execute.call_args[0][0].sql
+        assert "SELECT *" not in sql
+        assert "SELECT id, title" in sql
 
 
 class TestUpdateTrip:
@@ -224,6 +247,15 @@ class TestUpdateTrip:
         mock_db.execute.return_value = mock_result(rows=[])
         resp = c.patch("/api/trips/999", json={"title": "x"}, headers=AUTH_HEADERS)
         assert resp.status_code == 404
+
+    def test_update_returning_uses_explicit_columns(self, client):
+        c, mock_db = client
+        updated = (1, "New Title", None, None, None, None, "2024-01-01", "2024-01-02", "abc123")
+        mock_db.execute.return_value = mock_result(rows=[updated])
+        c.patch("/api/trips/1", json={"title": "New Title"}, headers=AUTH_HEADERS)
+        sql = mock_db.execute.call_args[0][0].sql
+        assert "RETURNING *" not in sql
+        assert "RETURNING id, title" in sql
 
 
 class TestDeleteTrip:
