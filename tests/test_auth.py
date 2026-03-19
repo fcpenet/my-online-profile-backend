@@ -85,14 +85,14 @@ class TestRequireAdmin:
         assert "Admin role required" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    async def test_token_no_user_raises_403(self):
+    async def test_token_no_user_passes_as_superuser(self):
         from app.auth import require_admin
         mock_client = AsyncMock()
-        mock_client.execute.return_value = mock_result(rows=[(10, 1, None, None)])
+        # Userless token (role=None) should be treated as superuser
+        mock_client.execute.return_value = mock_result(rows=[(0, 0, None, None)])
         with patch("app.auth.get_client", return_value=mock_client):
-            with pytest.raises(HTTPException) as exc_info:
-                await require_admin(api_key="some-token-value")
-        assert exc_info.value.status_code == 403
+            result = await require_admin(api_key="some-token-value")
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_invalid_token_raises_403(self):

@@ -65,7 +65,7 @@ async def require_admin(api_key: str = Security(api_key_header)):
     if max_uses != 0 and uses >= max_uses:
         raise HTTPException(status_code=403, detail="Token has no uses remaining")
 
-    if role != "admin":
+    if role is not None and role != "admin":
         raise HTTPException(status_code=403, detail="Admin role required")
 
 
